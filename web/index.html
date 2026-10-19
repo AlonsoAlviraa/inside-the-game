@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Inside the Game – Commentary Room</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{margin:0;font-family:system-ui,sans-serif;background:#0b1320;color:#e6edf3}
+header{display:flex;gap:12px;align-items:center;padding:10px 16px;background:#111a2b;flex-wrap:wrap}
+header select,header input,header button{background:#1b2638;color:#e6edf3;border:1px solid #2d3b55;border-radius:6px;padding:5px 8px}
+#score{font-size:22px;font-weight:700;margin-left:auto}
+main{display:grid;grid-template-columns:2fr 1fr;gap:12px;padding:12px}
+#pitchwrap{position:relative}
+canvas{width:100%;background:#1d6b35;border-radius:8px}
+#ticker{position:absolute;left:12px;bottom:12px;right:12px;background:rgba(0,0,0,.7);padding:8px 12px;border-radius:6px;font-size:18px;min-height:24px}
+#gauge{height:10px;background:#333;border-radius:5px;overflow:hidden;margin:8px 0}
+#gauge div{height:100%;background:linear-gradient(90deg,#1f6feb,#d4380d);transition:width .5s}
+#feed{list-style:none;margin:0;padding:0;max-height:70vh;overflow:auto}
+#feed li{padding:6px 8px;border-left:4px solid #555;margin-bottom:6px;background:#111a2b;border-radius:4px;font-size:14px}
+#feed li.narration{border-color:#ffd33d}#feed li.tactic{border-color:#a371f7}#feed li.stat{border-color:#3fb950}
+.tag{font-size:11px;opacity:.6;margin-right:6px;text-transform:uppercase}
+small{opacity:.6}
+</style></head><body>
+<header>
+  <strong>Inside the Game</strong><small>synthetic data · fictional teams</small>
+  <label>Mode <select id="mode"><option value="fan">Fan</option><option value="analyst">Analyst</option></select></label>
+  <label>Language <select id="lang"><option>en</option><option>es</option><option>fr</option></select></label>
+  <label>Club <select id="club"><option value="">—</option></select></label>
+  <label>Player <select id="player"><option value="">—</option></select></label>
+  <label>Speed <input id="speed" type="number" value="60" style="width:60px"></label>
+  <label>Seed <input id="seed" type="number" value="7" style="width:50px"></label>
+  <button id="go">Kick off</button>
+  <span id="score">– : –</span>
+</header>
+<main>
+  <section id="pitchwrap"><canvas id="pitch" width="1050" height="680"></canvas><div id="ticker"></div>
+    <div><small>Control ← home | away → · chaos: <b id="chaos">0</b> · phase: <b id="phase">–</b> · <b id="clock">0'</b></small>
+    <div id="gauge"><div style="width:50%"></div></div></div></section>
+  <aside><h3>Commentary room</h3><ul id="feed"></ul></aside>
+</main>
+<script>
+const $=id=>document.getElementById(id), cv=$("pitch"), cx=cv.getContext("2d");
+let es=null, meta=null, trail=[];
+function drawPitch(){cx.fillStyle="#1d6b35";cx.fillRect(0,0,1050,680);cx.strokeStyle="#ffffff88";cx.lineWidth=3;
+ cx.strokeRect(5,5,1040,670);cx.beginPath();cx.moveTo(525,5);cx.lineTo(525,675);cx.stroke();
+ cx.beginPath();cx.arc(525,340,91,0,7);cx.stroke();cx.strokeRect(5,138,165,404);cx.strokeRect(880,138,165,404);}
+function toCanvas(ev,x,y){const home=!meta||ev.team===meta.home.id;return home?[x*10,y*10]:[(105-x)*10,(68-y)*10];}
+function render(){drawPitch();trail.forEach((p,i)=>{cx.globalAlpha=(i+1)/trail.length;cx.strokeStyle=p.c;cx.lineWidth=2;
+ cx.beginPath();cx.moveTo(p.a[0],p.a[1]);cx.lineTo(p.b[0],p.b[1]);cx.stroke();cx.fillStyle=p.c;cx.beginPath();cx.arc(p.b[0],p.b[1],5,0,7);cx.fill();});cx.globalAlpha=1;}
+function addFeed(c){const li=document.createElement("li");li.className=c.kind;
+ li.innerHTML=`<span class="tag">${c.data.source_agent||c.agent}</span>${c.text}`;$("feed").prepend(li);
+ if(c.importance>=0.6)$("ticker").textContent=c.text;}
+$("go").onclick=()=>{if(es)es.close();$("feed").innerHTML="";trail=[];
+ const q=new URLSearchParams({seed:$("seed").value,speed:$("speed").value,mode:$("mode").value,lang:$("lang").value,club:$("club").value,player:$("player").value});
+ es=new EventSource("/api/stream?"+q);
+ es.addEventListener("tick",m=>{const d=JSON.parse(m.data),ev=d.event;
+  if(ev.type==="match_start"){meta=ev.meta;fillSelectors();}
+  if(ev.type==="pass"&&meta){const c=ev.team===meta.home.id?meta.home.color:meta.away.color;
+   trail.push({a:toCanvas(ev,ev.x,ev.y),b:toCanvas(ev,ev.end_x,ev.end_y),c});if(trail.length>12)trail.shift();render();}
+  d.commentary.forEach(addFeed);
+  if(meta&&d.score){$("score").textContent=`${meta.home.short} ${d.score[meta.home.id]??0} : ${d.score[meta.away.id]??0} ${meta.away.short}`;}
+  if(d.index&&d.index.control){const h=d.index.control[meta.home.id],a=d.index.control[meta.away.id];
+   $("gauge").firstElementChild.style.width=(100*h/((h+a)||1))+"%";$("chaos").textContent=d.index.chaos;$("phase").textContent=d.index.label;}
+  $("clock").textContent=ev.minute+"'";});
+ es.addEventListener("end",()=>es.close());};
+function fillSelectors(){const cl=$("club"),pl=$("player");if(cl.options.length>1)return;
+ [meta.home,meta.away].forEach(t=>{cl.add(new Option(t.name,t.id));t.players.forEach(p=>pl.add(new Option(`${p.name} (${t.short})`,p.id)));});}
+drawPitch();
+fetch("/api/match?seed=7").then(r=>r.json()).then(j=>{meta=j.events[0].meta;fillSelectors();});
+</script></body></html>
