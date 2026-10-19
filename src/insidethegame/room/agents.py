@@ -6,7 +6,7 @@ import json
 from .. import xt
 from ..metrics import ControlChaosIndex
 from ..spadl import to_spadl
-from . import factcheck
+from . import factcheck, semantic
 from .llm import Brain, parse_json
 from .state import Batch, RoomState, ViewerMemory, validate_card
 
@@ -143,9 +143,13 @@ class InterpretAgent:
             self._window.append(ev)
         self._window = [e for e in self._window if e["t"] > st.last_t - 300]
         phase, team = self._phase()
-        if phase != st.phase or team != st.phase_team:
+        # hysteresis: a new phase must be detected in 2 consecutive batches before we switch
+        pending = getattr(self, "_pending", None)
+        self._pending = (phase, team)
+        confirmed = (phase, team) == pending or st.phase == "kick-off"
+        if confirmed and (phase != st.phase or team != st.phase_team):
             last_card = getattr(self, "_last_phase_card", -99)
-            if st.minute >= 3 and st.minute - last_card >= 10:
+            if st.minute >= 3 and st.minute - last_card >= 15:
                 self._last_phase_card = st.minute
                 b.insights.append({"kind": "phase", "phase": phase, "team": team, "minute": st.minute,
                                    "from": st.phase, "control": st.index.get("control"),
@@ -166,8 +170,11 @@ class InterpretAgent:
                 facts = [snap, top_players(self.seed, "xt", 5, st.minute), top_players(self.seed, "xg", 5, st.minute),
                          control_index(self.seed, st.minute)]
                 ok, bad = factcheck.check(text, *facts)
+                sem = semantic.check(text, {"minute": st.minute, "teams": snap["teams"],
+                                            "control": snap["control"]}, snap, st.meta, st.roster())
+                ok = ok and not sem
                 if entry is not None:
-                    entry["factcheck"] = "pass" if ok else f"rejected {bad}"
+                    entry["factcheck"] = "pass" if ok else f"rejected {bad + sem}"
                 if ok:
                     st.tactical_read = text
                     b.insights.append({"kind": "read", "text": text, "minute": st.minute})
@@ -185,6 +192,7 @@ class SalienceScout:
 
     async def run(self, b: Batch, entry: dict | None = None) -> Batch:
         st = self.st
+        pass_taken = False  # at most one pass card per batch
         for ev in b.events:
             t, s = ev["type"], 0.0
             if t == "goal":
@@ -200,9 +208,10 @@ class SalienceScout:
                 s = 0.3
             elif t == "match_end" or (t == "period_end" and ev.get("period") == 1):
                 s = 0.95  # (period 2 end == match end: one full-time card only)
-            elif t == "pass" and ev["success"]:
+            elif t == "pass" and ev["success"] and not pass_taken:
                 g = xt.added(ev)
-                s = 0.3 + 4 * g if g >= 0.05 else 0.0
+                if g >= 0.08 and ev.get("length_m", 0) >= 12:  # only genuinely progressive passes
+                    s, pass_taken = 0.3 + 3 * g, True
             if s and st.minute >= 80:
                 s += 0.1
             if s >= 0.35:
@@ -221,8 +230,8 @@ class ExplainAgent:
                     "history or players. 'control' is a 0-1 control index, NOT possession - never turn it into a "
                     "possession percentage. Reply as JSON: {\"items\":[{\"id\":\"...\",\"why\":\"...\"}]}")
 
-    def __init__(self, state: RoomState, brain: Brain, top_k: int = 3):
-        self.st, self.brain, self.k = state, brain, top_k
+    def __init__(self, state: RoomState, brain: Brain, top_k: int = 3, verifier: Brain | None = None):
+        self.st, self.brain, self.k, self.verifier = state, brain, top_k, verifier
         self.rejections = 0
 
     def facts_for(self, c: dict) -> dict:
@@ -243,7 +252,7 @@ class ExplainAgent:
             ps = st.player_stats.get(ev["player_id"], {})
             f["player_match_xg"] = round(ps.get("xg", 0), 2)
             f["player_match_xt"] = round(ps.get("xt", 0), 2)
-        for k in ("xg", "outcome", "distance_m", "speed_kmh", "header", "card", "player_on", "player_off",
+        for k in ("period", "xg", "outcome", "distance_m", "speed_kmh", "header", "card", "player_on", "player_off",
                   "length_m"):
             if k in ev:
                 f[k] = ev[k]
@@ -306,15 +315,40 @@ class ExplainAgent:
             if isinstance(data, dict):
                 llm_items = {i.get("id"): i.get("why", "") for i in data.get("items", []) if isinstance(i, dict)}
         rejected = []
+
+        def problems(cid: str, why: str) -> list[str]:
+            ok, bad = factcheck.check(why, facts[cid])
+            return [f"unsupported number {n}" for n in bad] + semantic.check(
+                why, facts[cid], st.snapshot(), st.meta, st.roster())
+
+        issues = {cid: problems(cid, w) for cid, w in llm_items.items() if w and cid in facts}
+        bad_ids = [cid for cid, i in issues.items() if i]
+        if bad_ids and self.brain.online:  # one repair round with the concrete contradictions
+            prompt = ("Fix these explanations. Each listed issue is a factual error against the facts; rewrite so "
+                      "it is consistent, same JSON format.\n" + "\n".join(json.dumps(
+                          {"id": cid, "facts": facts[cid], "draft": llm_items[cid], "issues": issues[cid]})
+                          for cid in bad_ids))
+            fixed = parse_json(await self.brain.ask(prompt, None))
+            for i in (fixed or {}).get("items", []) if isinstance(fixed, dict) else []:
+                if isinstance(i, dict) and i.get("id") in issues and i.get("why"):
+                    if not problems(i["id"], i["why"]):
+                        rejected.append({"id": i["id"], "repaired": True, "issues": issues[i["id"]]})
+                        llm_items[i["id"]], issues[i["id"]] = i["why"], []
+        if self.verifier is not None and self.verifier.online:  # optional cheap LLM verifier
+            ok_ids = [cid for cid, w in llm_items.items() if w and cid in facts and not issues.get(cid)]
+            if ok_ids:
+                v = parse_json(await self.verifier.ask("\n".join(json.dumps(
+                    {"id": cid, "facts": facts[cid], "text": llm_items[cid]}) for cid in ok_ids), None))
+                for r in (v or {}).get("results", []) if isinstance(v, dict) else []:
+                    if isinstance(r, dict) and r.get("ok") is False and r.get("id") in llm_items:
+                        issues[r["id"]] = [f"verifier: {r.get('issue', 'contradiction')}"]
         for c in chosen:
             f = facts[c["id"]]
             why, source = llm_items.get(c["id"]), "explain-llm"
-            if why:
-                ok, bad = factcheck.check(why, f)
-                if not ok:
-                    rejected.append({"id": c["id"], "unsupported": bad, "text": why})
-                    self.rejections += 1
-                    why = None
+            if why and issues.get(c["id"]):
+                rejected.append({"id": c["id"], "issues": issues[c["id"]], "text": why})
+                self.rejections += 1
+                why = None
             if not why:
                 why = self.template(c, f)
                 source = "interpret-llm" if c["kind"] == "read" else "template"
@@ -422,17 +456,42 @@ class PersonaliseAgent:
                                                         ensure_ascii=False) for c in out))
             data = parse_json(await self.brain.ask(prompt, entry))
             rewritten = {i.get("id"): i for i in (data or {}).get("cards", []) if isinstance(i, dict)} if isinstance(data, dict) else {}
-            rejected = 0
+            def problems(c: dict, r: dict) -> list[str]:
+                txt = r["text"] + " " + r.get("title", "")
+                ok, bad = factcheck.check(txt, c["text"], c["title"], c.get("facts", {}))
+                f = c.get("facts", {})
+                iss = [f"unsupported number {n}" for n in bad]
+                iss += semantic.check(r["text"], f, self.st.snapshot(), self.st.meta, self.st.roster())
+                if p.mode == "fan":
+                    iss += semantic.fan_violations(r["text"], f)
+                return iss
+
+            todo = {c["id"]: c for c in out}
+            issues = {cid: problems(todo[cid], r) for cid, r in rewritten.items()
+                      if cid in todo and isinstance(r, dict) and r.get("text")}
+            missing = [cid for cid in todo if cid not in issues]
+            bad = [cid for cid, i in issues.items() if i]
+            if (bad or missing) and self.brain.online:  # one repair round: rule violations + omitted cards
+                prompt = (f"Fix these cards for a {p.mode.upper()} viewer in {LANGS.get(p.language, p.language)}. "
+                          "Resolve every listed issue; same JSON format.\n" + "\n".join(json.dumps(
+                              {"id": cid, "title": todo[cid]["title"], "source_text": todo[cid]["text"],
+                               "draft": rewritten.get(cid, {}).get("text"), "issues": issues.get(cid, ["missing"])},
+                              ensure_ascii=False) for cid in bad + missing))
+                fixed = parse_json(await self.brain.ask(prompt, None))
+                for r in (fixed or {}).get("cards", []) if isinstance(fixed, dict) else []:
+                    if isinstance(r, dict) and r.get("id") in todo and r.get("text"):
+                        iss = problems(todo[r["id"]], r)
+                        if not iss:
+                            rewritten[r["id"]], issues[r["id"]] = r, []
+            rejected = []
             for c in out:
                 r = rewritten.get(c["id"])
-                if not r or not r.get("text"):
+                if not r or not r.get("text") or issues.get(c["id"], ["missing"]):
+                    if r and issues.get(c["id"]):
+                        rejected.append({"id": c["id"], "issues": issues[c["id"]], "text": r.get("text")})
                     continue
-                ok, _ = factcheck.check(r["text"] + " " + r.get("title", ""), c["text"], c["title"], c.get("facts", {}))
-                if ok:
-                    c["text"], c["title"] = r["text"][:400], (r.get("title") or c["title"])[:60]
-                    c["source"] += "+personalised"
-                else:
-                    rejected += 1
+                c["text"], c["title"] = r["text"][:400], (r.get("title") or c["title"])[:60]
+                c["source"] += "+personalised"
             if entry is not None:
                 entry["factcheck_rejected"] = rejected
         for c in out:

@@ -99,3 +99,14 @@ def test_token_budget_caps_short_window():
     assert asyncio.run(b.acquire(900))
     assert not asyncio.run(b.acquire(900))   # 10 s slice = 1500 tokens
     assert b.used() == 900
+
+
+def test_templates_pass_semantic_check_and_flicker_is_low():
+    from collections import Counter
+    from insidethegame.room import semantic
+    room, cards, _ = play()
+    for c in cards:
+        assert semantic.check(c["text"], c["facts"], room.state.snapshot(), room.state.meta,
+                              room.state.roster()) == [], c
+    n = Counter(c["type"] for c in cards)
+    assert n["phase"] <= 6 and n["stat"] <= 8

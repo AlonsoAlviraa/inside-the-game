@@ -35,6 +35,14 @@ flowchart LR
 | Render | `RenderAgent` | overlay cards validated against `CARD_SCHEMA` (`GET /api/card-schema`): type, priority 1-5, ttl, title, text, viz hint (shot_marker, pass_arrow, control_gauge, badge) | – |
 | Personalise | `PersonaliseAgent` | priority boosts for favourite club/player, fan filter, persistent `ViewerMemory` (fills missing prefs from last session) | rewrites all cards of a batch for mode + language in one call; re-fact-checked against the source card |
 
+**Grounding (two gates).** (1) `factcheck.py`: every number must exist in the facts. (2) `semantic.py`: claims are
+pulled out of the text with rules and checked against the match state: who leads xG/shots/control, which player
+is credited, the minute, xG vs xT naming, half-time vs full-time labels, and the control index never being
+called possession (EN/ES/FR). Contradictions trigger one batched repair call; anything still wrong falls back to
+the grounded template. Fan-mode style rules (no decimals, speeds, distances or jargon, the scorer named on goals,
+max 24 words) are enforced the same way. `ITG_LLM_VERIFY=1` adds an optional cheap LLM verifier pass (off by
+default: in testing it was pedantic and added load).
+
 **Throughput / quota.** Events are batched per `ITG_BATCH_S` (default 300 match-seconds, early flush on goals and
 period ends), so a batch costs at most 3 LLM calls. `TokenBudget` reserves prompt + max_tokens per call against
 both a 60 s window (`ITG_TPM_LIMIT`, default 9000 for a 10K TPM deployment) and a 10 s slice (`ITG_TPM_SLICE`); if a

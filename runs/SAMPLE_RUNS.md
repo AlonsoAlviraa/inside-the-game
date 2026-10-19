@@ -163,3 +163,73 @@ anomalies 0 dups 0
  93' [substitution] p4 explain-llm                Substitution | At minute 93, Harbour City Mariners substituted Dario Vance for Quin Elmsworth during a chaotic phase while trailing 0-1 to IRR, aiming to inject fresh energy and possibly change the game's outcome in the final moments.
  95' [period      ] p5 explain-llm                HCM 0-1 IRR | Ironridge Rovers secured a 1-0 victory despite fewer shots, capitalizing on a higher expected goals (1.52) compared to Harbour City Mariners' 0.62, highlighting their clinical finishing in a chaotic final phase.
 ```
+
+## Run 3: fan · Spanish · Harbour fan · speed 20 · semantic check + hysteresis (2026-10-19 ~23:00 CEST)
+```
+ticks 1980 batches 21
+{
+ "input_tokens": 19215,
+ "output_tokens": 3431,
+ "calls": 42,
+ "usd": 0.01318,
+ "by_agent": {
+  "interpret": {
+   "calls": 6,
+   "input": 6365,
+   "output": 484,
+   "skipped_budget": 0,
+   "errors": 0,
+   "tool_calls": 8
+  },
+  "explain": {
+   "calls": 16,
+   "input": 4989,
+   "output": 1395,
+   "skipped_budget": 0,
+   "errors": 0,
+   "tool_calls": 0
+  },
+  "personalise": {
+   "calls": 20,
+   "input": 7861,
+   "output": 1552,
+   "skipped_budget": 0,
+   "errors": 0,
+   "tool_calls": 0
+  }
+ }
+}
+fact-check rejections 0 llm states {'azure': 39}
+{'ingest': (0, 1), 'salience': (0, 0), 'interpret': (718, 2988), 'explain': (1234, 3412), 'render': (0, 0), 'personalise': (3065, 9948)}
+anomalies 0 dups 0
+  6' [phase       ] p4 explain-llm+personalised   Cambio de fase | ¡Ironridge Rovers dominan desde el inicio, el partido se ha vuelto un caos total!
+  6' [insight     ] p3 interpret-llm+personalised Análisis táctico | Ironridge Rovers controla y pasa bien, pero el alto nivel de caos mantiene el juego abierto.
+  5' [chance      ] p3 explain-llm+personalised   Oportunidad · Cyro Juniper | Cyro Juniper intentó un disparo a los 5 minutos, pero falló la oportunidad de abrir el marcador.
+  6' [chance      ] p4 explain-llm+personalised   Oportunidad · Kian Juniper | ¡Kian Juniper lanzó un disparo potente pero se fue fuera, Harbour City Mariners buscando romper el empate!
+ 11' [chance      ] p5 explain-llm+personalised   Oportunidad · Hugo Northam | ¡Hugo Northam casi marca para Harbour City Mariners con un disparo cercano que fue salvado!
+ 11' [stat        ] p4 explain-llm+personalised   Pase que añade peligro | Kian Juniper lanzó un pase largo que impulsó el ataque de Harbour City Mariners en una fase caótica.
+ 23' [chance      ] p3 explain-llm+personalised   Oportunidad · Hugo Northam | ¡Hugo Northam de Harbour City Mariners disparó con ganas pero el portero estuvo atento!
+ 22' [chance      ] p2 explain-llm+personalised   Oportunidad · Cyro Juniper | Cyro Juniper de Ironridge Rovers intentó un disparo que fue salvado, manteniendo el empate.
+ 25' [chance      ] p2 explain-llm+personalised   Oportunidad · Bento Calder | Bento Calder de Ironridge Rovers tuvo un disparo bloqueado, sin cambiar el marcador.
+ 26' [chance      ] p5 explain-llm+personalised   Oportunidad · Arlo Underhill | ¡Arlo Underhill casi marca para Ironridge Rovers, pero el portero lo evitó con una gran parada!
+ 27' [chance      ] p3 explain-llm+personalised   Oportunidad · Zeno Northam | Zeno Northam disparó fuera y perdió una gran oportunidad para Ironridge Rovers, siguen presionando sin suerte.
+ 36' [insight     ] p3 interpret-llm+personalised Lectura táctica | ¡Vamos Mariners! Dominan con fuerza y ponen a Ironridge Rovers contra las cuerdas.
+ 35' [chance      ] p4 explain-llm+personalised   Oportunidad · Hugo Northam | Hugo Northam casi rompe el empate con un disparo rápido, ¡pero se fue desviado!
+ 37' [goal        ] p5 explain-llm+personalised   GOAL · HCM 0-1 IRR | ¡No puede ser! Yuri Greywick marca para Ironridge Rovers y nos ponen por detrás en el marcador.
+ 48' [period      ] p5 explain-llm+personalised   HCM 0-1 IRR | ¡Vamos Mariners! Dominan y merecen el empate, pero Ironridge Rovers aprovechan sus oportunidades.
+ 51' [insight     ] p3 interpret-llm+personalised Tactical read | ¡Kian Juniper está llevando la delantera para Harbour City Mariners en un partido muy loco!
+ 48' [card        ] p3 explain-llm+personalised   Yellow card | Zeno Northam de Ironridge Rovers vio amarilla y el partido sigue 1-0 para ellos contra HCM.
+ 66' [insight     ] p3 interpret-llm+personalised Lectura táctica | Ironridge Rovers dominan el control y las ocasiones, pero Kian Juniper destaca creando peligro para Harbour City Mariners.
+ 68' [stat        ] p4 explain-llm+personalised   Pase que añade peligro | ¡Ilan Elmsworth está poniendo a Ironridge Rovers a un paso de mantener el 1-0 contra Harbour City Mariners!
+ 72' [card        ] p3 explain-llm+personalised   Tarjeta amarilla | ¡Hale Ingleby de Ironridge Rovers se arriesga con esa amarilla en el 1-0, ojo a lo que puede pasar al final!
+ 81' [insight     ] p3 interpret-llm+personalised Lectura táctica | ¡Kian Juniper lo está dando todo, pero Harbour City Mariners van perdiendo 0-1 contra Ironridge Rovers!
+ 84' [chance      ] p4 explain-llm+personalised   Chance · Nilo Thornby | ¡Nilo Thornby lo intentó con un disparo lejano, pero Ironridge Rovers sigue ganando 1-0!
+ 85' [chance      ] p4 explain-llm+personalised   Chance · Kian Juniper | Kian Juniper no acertó el disparo y Harbour City Mariners siguen perdiendo 0-1 en un momento tenso.
+ 83' [substitution] p4 explain-llm+personalised   Substitution | Harbour City Mariners cambian a Gael Greywick por Nilo Thornby para intentar remontar el 0-1.
+ 91' [chance      ] p3 explain-llm+personalised   Oportunidad · Zeno Northam | ¡Zeno Northam disparó fuerte y el portero salvó el 1-0 para Ironridge Rovers en el 91!
+ 89' [chance      ] p4 explain-llm+personalised   Oportunidad · Oren Birchall | Oren Birchall intentó desde lejos pero el disparo fue bloqueado, Harbour City Mariners siguen sin empatar.
+ 86' [chance      ] p3 explain-llm+personalised   Oportunidad · Ilan Elmsworth | Ilan Elmsworth cabeceó fuera y Ironridge Rovers mantienen su ventaja mínima.
+ 93' [substitution] p4 explain-llm+personalised   Sustitución | ¡Vamos Harbour City Mariners! Dario Vance sale y entra Quin Elmsworth para darle la vuelta al partido.
+ 95' [period      ] p5 explain-llm+personalised   HCM 0-1 IRR | ¡Maldita sea, Harbour City Mariners merecían al menos un gol con tantas oportunidades claras!
+REJECT 21 interpret "rejected ['leader:control: text credits Ironridge Rovers, state says Harbour City Mariners']"
+```

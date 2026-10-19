@@ -51,6 +51,9 @@ class RoomState:
                     return p["name"]
         return pid or ""
 
+    def roster(self) -> list[str]:
+        return [p["name"] for side in ("home", "away") for p in self.meta.get(side, {}).get("players", [])]
+
     def score_line(self) -> str:
         if not self.meta or not self.score:
             return ""

@@ -34,6 +34,12 @@ def _interpret_tools(seed_getter):
     return [top_players, control_index]
 
 
+VERIFIER_INSTRUCTIONS = ("You verify football commentary against facts. For each item, ok=false only if the text "
+                         "contradicts the facts (wrong leader, wrong player, wrong metric name, wrong minute/period, "
+                         "control index called possession). Wording, style, tone and calling the control index 'control' are fine. Reply JSON {\"results\":[{\"id\":..,\"ok\":true|false,"
+                         "\"issue\":\"...\"}]}")
+
+
 class CommentaryRoom:
     def __init__(self, seed: int = 7, orchestrator: str | None = None, online: bool | None = None,
                  memory: ViewerMemory | None = None, budget: TokenBudget | None = None,
@@ -63,7 +69,10 @@ class CommentaryRoom:
         self.ingest = IngestAgent(st)
         self.interpret = InterpretAgent(st, mk(InterpretAgent, 120, tools), seed)
         self.salience = SalienceScout(st)
-        self.explain = ExplainAgent(st, mk(ExplainAgent, 260))
+        verifier = None
+        if client is not None and os.getenv("ITG_LLM_VERIFY", "0") == "1":
+            verifier = Brain("verifier", VERIFIER_INSTRUCTIONS, client, None, self.budget, self.ledger, 150)
+        self.explain = ExplainAgent(st, mk(ExplainAgent, 260), verifier=verifier)
         self.render = RenderAgent(st)
         self.personalise = PersonaliseAgent(st, mk(PersonaliseAgent, 320), self.memory)
         self.errors: list[str] = []

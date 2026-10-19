@@ -51,7 +51,15 @@ async def sse(seed: int = 7, speed: float = Query(60.0, ge=0, le=5000), mode: st
         q_out: asyncio.Queue = asyncio.Queue()
 
         async def worker():
-            while (batch := await q_in.get()) is not None:
+            done = False
+            while not done and (batch := await q_in.get()) is not None:
+                # backpressure: if the model fell behind, merge queued batches into one (fewer LLM calls)
+                while not q_in.empty():
+                    nxt = q_in.get_nowait()
+                    if nxt is None:
+                        done = True
+                        break
+                    batch = batch + nxt
                 b = await room.process_batch(batch, profile)
                 await q_out.put({"cards": b.cards, "trace": b.trace, "report": b.report, "index": room.state.index,
                                  "phase": room.state.phase, "score": room.state.score, "minute": room.state.minute,
