@@ -233,3 +233,76 @@ anomalies 0 dups 0
  95' [period      ] p5 explain-llm+personalised   HCM 0-1 IRR | ¡Maldita sea, Harbour City Mariners merecían al menos un gol con tantas oportunidades claras!
 REJECT 21 interpret "rejected ['leader:control: text credits Ironridge Rovers, state says Harbour City Mariners']"
 ```
+
+## Run 4: deployed Container App · fan · Spanish · seed 11 · speed 40 (2026-10-19 ~23:15 CEST)
+```
+ticks 1908 batches 13
+{
+ "input_tokens": 15653,
+ "output_tokens": 2921,
+ "calls": 34,
+ "usd": 0.01093,
+ "by_agent": {
+  "explain": {
+   "calls": 13,
+   "input": 4872,
+   "output": 1478,
+   "skipped_budget": 0,
+   "errors": 0,
+   "tool_calls": 0
+  },
+  "personalise": {
+   "calls": 15,
+   "input": 5833,
+   "output": 1110,
+   "skipped_budget": 2,
+   "errors": 0,
+   "tool_calls": 0
+  },
+  "interpret": {
+   "calls": 6,
+   "input": 4948,
+   "output": 333,
+   "skipped_budget": 0,
+   "errors": 0,
+   "tool_calls": 4
+  }
+ }
+}
+fact-check rejections 3 llm states {'azure': 30}
+{'ingest': (1, 1), 'interpret': (2484, 8489), 'salience': (0, 0), 'explain': (2907, 9032), 'render': (0, 0), 'personalise': (6691, 12479)}
+anomalies 0 dups 0
+  2' [goal        ] p5 explain-llm+personalised   GOL · HCM 0-1 IRR | ¡Zeno Northam abrió el marcador para Ironridge Rovers, poniendo el 1-0 muy pronto!
+  1' [chance      ] p3 explain-llm+personalised   Ocasión · Zeno Northam | Zeno Northam intentó un disparo lejano que fue detenido, mostrando ganas de gol desde el inicio.
+  8' [insight     ] p3 interpret-llm+personalised Lectura táctica | ¡Yuri Greywick lidera a Ironridge Rovers en un dominio total tras el gol inicial, Mariners no bajan los brazos!
+  7' [card        ] p3 explain-llm+personalised   Tarjeta amarilla | Xan Kilnsey de Ironridge Rovers recibió tarjeta amarilla al minuto 7, lo que puede afectar su juego defensivo.
+  7' [chance      ] p4 explain-llm+personalised   Ocasión · Gael Greywick | Gael Greywick de Harbour City Mariners intentó un disparo lejano al minuto 7, pero se fue desviado.
+ 14' [stat        ] p4 explain-llm+personalised   Pase peligroso | ¡Vamos Harbour City Mariners, sigue el pase rápido de Ivo Underhill para mantenernos en el partido!
+ 17' [chance      ] p3 explain-llm+personalised   Ocasión · Bento Calder | Bento Calder de Ironridge Rovers falló un disparo a los 17 minutos, desaprovechando ampliar la ventaja 1-0.
+ 19' [chance      ] p4 explain-llm+personalised   Ocasión · Yuri Greywick | ¡Ironridge Rovers sigue ganando 1-0, pero Yuri Greywick falló un disparo claro!
+ 23' [insight     ] p3 interpret-llm              Lectura táctica | Harbour City Mariners dominate control index at 0.717, maintaining siege phase pressure despite trailing 0-1 to Ironridge Rovers with higher pass volume and completion.
+ 21' [chance      ] p4 explain-llm+personalised   Ocasión · Hugo Northam | Hugo Northam lanzó un disparo potente que fue detenido, Ironridge Rovers mantiene su ventaja 1-0.
+ 24' [goal        ] p5 explain-llm+personalised   GOL · HCM 1-2 IRR | ¡Gael Greywick pone a Harbour City Mariners en el partido con un golazo al minuto 24!
+ 39' [goal        ] p5 explain-llm+personalised   GOL · HCM 1-2 IRR | Cyro Juniper amplía la ventaja de Ironridge Rovers justo antes del descanso, 2-1.
+ 48' [period      ] p5 explain-llm+personalised   Descanso · HCM 1-2 IRR | ¡Ironridge Rovers dominan 2-1 y están siendo muy efectivos, pero Harbour City Mariners no se rinden!
+ 42' [card        ] p5 explain-llm+personalised   Tarjeta roja | Wren Dovecote de Ironridge Rovers fue expulsado al minuto 42, complicando su ventaja de 2-1 en la primera mitad.
+ 46' [chance      ] p4 explain-llm+personalised   Ocasión · Hugo Northam | Hugo Northam intentó empatar al minuto 46, pero su disparo fue detenido, ¡Harbour City Mariners siguen luchando!
+ 56' [insight     ] p3 interpret-llm+personalised Lectura táctica | Ironridge Rovers están apretando fuerte y presionando sin descanso a los Mariners.
+ 52' [chance      ] p3 explain-llm+personalised   Ocasión · Zeno Northam | ¡Zeno Northam lo intentó rápido al minuto 52 y seguimos ganando 2-1 al HCM!
+ 61' [phase       ] p4 explain-llm+personalised   Cambio de fase | ¡Los Mariners dominan pero el juego se vuelve una locura al minuto 61, esto se pone intenso!
+ 58' [stat        ] p4 explain-llm+personalised   Pase peligroso | ¡Ivo Underhill lanzó un pase peligroso buscando el empate para Harbour City Mariners!
+ 65' [card        ] p3 explain-llm+personalised   Tarjeta amarilla | ¡Zeno Northam de Ironridge Rovers recibió tarjeta amarilla al minuto 65, cuidado con la disciplina en este partido loco!
+ 74' [chance      ] p5 explain-llm+personalised   Ocasión · Gael Greywick | ¡Gael Greywick lo intentó rápido pero falló una gran oportunidad para los Mariners!
+ 76' [insight     ] p3 interpret-llm              Lectura táctica | Despite chaos, Ironridge Rovers maintain higher control index (0.653) and expected threat led by Yuri Greywick (xt 0.253), pressuring Harbour City Mariners trailing in xt and score.
+ 82' [stat        ] p5 explain-llm+personalised   Pase peligroso | ¡Pax Ingleby puso un pase rápido para intentar empatar el partido y dar esperanza a los Mariners!
+ 85' [chance      ] p3 explain-llm+personalised   Ocasión · Ilan Elmsworth | Ilan Elmsworth disparó fuerte pero fue bloqueado, manteniendo la presión para Ironridge Rovers con ventaja 2-1.
+ 82' [chance      ] p4 explain-llm+personalised   Ocasión · Hugo Northam | Hugo Northam intentó un disparo potente para igualar, pero fue bloqueado en un momento crucial.
+ 96' [period      ] p5 explain-llm+personalised   Final · HCM 1-2 IRR | ¡Qué partido! Ironridge Rovers ganaron 2-1 a nuestros Mariners, pero seguimos luchando con todo.
+ 96' [insight     ] p3 interpret-llm+personalised Lectura táctica | Aunque los Mariners tuvieron mejor control y pases, Ironridge Rovers dominan con ventaja 2-1.
+ 91' [chance      ] p3 explain-llm+personalised   Ocasión · Ilan Elmsworth | Ilan Elmsworth falló una gran oportunidad al final, pero los Mariners no se rinden.
+REJECT 23 personalise [{"id": "read232", "issues": ["fan: decimal number"], "text": "Harbour City Mariners dominan el control con 0.717 y más pases, pero siguen perdiendo 0-1."}]
+REJECT 39 interpret "rejected ['leader:xg: text credits Harbour City Mariners, state says Ironridge Rovers']"
+REJECT 48 explain [{"id": "ev761", "repaired": true, "issues": ["unsupported number 10"]}]
+REJECT 76 personalise [{"id": "read761", "issues": ["fan: decimal number", "fan: jargon"], "text": "Ironridge Rovers dominan con un control del 0.653 y más amenaza esperada, presionando a los Mariners."}]
+```
+(Run 4 was on image v2. Image v3 fixes the goal title showing the end-of-batch score: the 24' goal now reads GOL · HCM 1-1 IRR.)

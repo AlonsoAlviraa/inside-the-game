@@ -258,6 +258,9 @@ class ExplainAgent:
                 f[k] = ev[k]
         if ev["type"] == "pass":
             f["xt_added"] = round(ev.get("xt_added", xt.added(ev)), 2)
+        if ev["type"] == "goal" and st.meta:  # score at the moment of the goal, not at batch end
+            h, a = st.meta["home"], st.meta["away"]
+            f["score"] = f"{h['short']} {ev['score'].get(h['id'], 0)}-{ev['score'].get(a['id'], 0)} {a['short']}"
         if ev["type"] in ("goal", "period_end", "match_end"):
             f["teams"] = snap["teams"]
         return f
@@ -392,10 +395,7 @@ class RenderAgent:
             elif kind in ("card", "substitution", "period"):
                 viz = {"kind": "badge", "value": f.get("card", kind)}
             priority = 1 + min(4, int(e["score"] * 5))
-            title = {"goal": f"GOAL · {f.get('score', '')}", "chance": f"Chance · {f.get('player', '')}",
-                     "card": f"{str(f.get('card', '')).replace('_', ' ').title()} card",
-                     "substitution": "Substitution", "stat": "Threat-adding pass",
-                     "period": f.get("score", "Period"), "phase": "Phase shift", "insight": "Tactical read"}[kind]
+            title = card_title({"type": kind, "facts": f, "title": kind}, "en")
             card = {"id": e["id"], "type": kind, "priority": priority,
                     "ttl_s": {5: 20, 4: 14, 3: 10}.get(priority, 8), "minute": int(f.get("minute", self.st.minute)),
                     "title": title[:60], "text": e["why"][:400], "team": ev.get("team") or e.get("insight", {}).get("team"),
@@ -405,6 +405,34 @@ class RenderAgent:
             b.cards.append(card)
         b.cards.sort(key=lambda c: -c["priority"])
         return b
+
+
+# Fixed, human-checked card titles per language (the LLM never writes titles).
+TITLES = {
+    "en": {"goal": "GOAL · {score}", "chance": "Chance · {player}", "yellow": "Yellow card", "red": "Red card",
+           "second_yellow": "Second yellow", "substitution": "Substitution", "stat": "Threat-adding pass",
+           "half": "Half-time · {score}", "full": "Full-time · {score}", "phase": "Phase shift",
+           "insight": "Tactical read"},
+    "es": {"goal": "GOL · {score}", "chance": "Ocasión · {player}", "yellow": "Tarjeta amarilla",
+           "red": "Tarjeta roja", "second_yellow": "Segunda amarilla", "substitution": "Cambio",
+           "stat": "Pase peligroso", "half": "Descanso · {score}", "full": "Final · {score}",
+           "phase": "Cambio de fase", "insight": "Lectura táctica"},
+    "fr": {"goal": "BUT · {score}", "chance": "Occasion · {player}", "yellow": "Carton jaune",
+           "red": "Carton rouge", "second_yellow": "Deuxième jaune", "substitution": "Remplacement",
+           "stat": "Passe dangereuse", "half": "Mi-temps · {score}", "full": "Fin du match · {score}",
+           "phase": "Changement de phase", "insight": "Lecture tactique"},
+}
+
+
+def card_title(card: dict, lang: str) -> str:
+    f = card.get("facts", {})
+    key = card["type"]
+    if key == "card":
+        key = f.get("card", "yellow")
+    elif key == "period":
+        key = "half" if f.get("moment") == "period_end" and f.get("period") == 1 else "full"
+    t = TITLES.get(lang, TITLES["en"]).get(key, TITLES["en"].get(key, card["title"]))
+    return t.format(score=f.get("score", ""), player=f.get("player", ""))[:60]
 
 
 # =========================================================================== 5. PERSONALISE
@@ -420,7 +448,7 @@ class PersonaliseAgent:
                     "no numbers except the score, no decimals, speeds or distances, no "
                     "jargon (no xG, xT, index), at most one exclamation mark; extra excitement only when the "
                     "viewer's favourite club or player is involved. ANALYST mode: max 2 sentences, keep all numbers. "
-                    "A control index is not possession. Return EVERY card you receive, same ids. Write in the target language. Reply as JSON: {\"cards\":[{\"id\":\"...\",\"title\":\"...\",\"text\":\"...\"}]}")
+                    "A control index is not possession. Return EVERY card you receive, same ids. Write in the target language. Reply as JSON: {\"cards\":[{\"id\":\"...\",\"text\":\"...\"}]}")
 
     def __init__(self, state: RoomState, brain: Brain, memory: ViewerMemory):
         self.st, self.brain, self.memory = state, brain, memory
@@ -439,6 +467,7 @@ class PersonaliseAgent:
             c = dict(c)
             if p.club and c.get("team") == p.club:
                 c["priority"] = min(5, c["priority"] + 1)
+            c["title"] = card_title(c, p.language)
             if p.player and c.get("player_id") == p.player:
                 c["priority"] = 5
                 c["title"] = ("★ " + c["title"])[:60]
@@ -452,7 +481,7 @@ class PersonaliseAgent:
             player = self.st.player_name(p.player) if p.player else "none"
             prompt = (f"Viewer: mode={p.mode.upper()}, language={LANGS.get(p.language, p.language)}, "
                       f"favourite club={club}, favourite player={player}. Memory: {self.memory.summary(p.viewer_id)}\n"
-                      "Cards:\n" + "\n".join(json.dumps({"id": c["id"], "title": c["title"], "text": c["text"]},
+                      "Cards:\n" + "\n".join(json.dumps({"id": c["id"], "text": c["text"]},
                                                         ensure_ascii=False) for c in out))
             data = parse_json(await self.brain.ask(prompt, entry))
             rewritten = {i.get("id"): i for i in (data or {}).get("cards", []) if isinstance(i, dict)} if isinstance(data, dict) else {}
@@ -490,7 +519,7 @@ class PersonaliseAgent:
                     if r and issues.get(c["id"]):
                         rejected.append({"id": c["id"], "issues": issues[c["id"]], "text": r.get("text")})
                     continue
-                c["text"], c["title"] = r["text"][:400], (r.get("title") or c["title"])[:60]
+                c["text"] = r["text"][:400]  # title stays the fixed per-language one
                 c["source"] += "+personalised"
             if entry is not None:
                 entry["factcheck_rejected"] = rejected

@@ -110,3 +110,18 @@ def test_templates_pass_semantic_check_and_flicker_is_low():
                               room.state.roster()) == [], c
     n = Counter(c["type"] for c in cards)
     assert n["phase"] <= 6 and n["stat"] <= 8
+
+
+def test_fixed_per_language_titles():
+    _, es, _ = play(ViewerProfile(mode="analyst", language="es"))
+    titles = {c["type"]: c["title"] for c in es}
+    assert titles["goal"].startswith("GOL ·") and titles["phase"] == "Cambio de fase"
+    assert any(c["title"].startswith("Final ·") for c in es if c["type"] == "period")
+    _, fr, _ = play(ViewerProfile(mode="analyst", language="fr"))
+    assert any(c["title"].startswith("BUT ·") for c in fr)
+
+
+def test_goal_card_shows_score_at_time_of_goal():
+    room, cards, _ = play(seed=11)
+    goals = [c for c in cards if c["type"] == "goal"]
+    assert len({c["title"] for c in goals}) == len(goals)  # each goal has its own scoreline

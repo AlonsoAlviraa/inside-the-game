@@ -134,3 +134,17 @@ Only ideas, schemas and published methods are reused; **no third-party data, cod
 
 Not used: StatsBomb open data (its terms require displaying the StatsBomb logo, which conflicts with the
 no-third-party-brands rule), SoccerNet video (NDA), MatchTime/SoccerNet-Caption (no licence file).
+
+## Deployment (Azure Container Apps, francecentral)
+Live: https://ca-insidethegame.kindisland-b212215e.francecentral.azurecontainerapps.io
+
+* The image is built **without Docker**: dependencies are installed for CPython 3.12 manylinux wheels into
+  `app/site`, packed as a single layer and appended to `python:3.12-slim` with
+  [crane](https://github.com/google/go-containerregistry), then pushed to ACR `acrinsidethegamealv` (Basic)
+  using `az acr login --expose-token`. (`az acr build` is blocked on Azure for Students: `TasksOperationsNotAllowed`.)
+* Container App `ca-insidethegame` in env `cae-insidethegame` (consumption / Express), 0.25 vCPU, 0.5 GiB, 1 replica.
+* Express environments don't support managed identity, so the Azure OpenAI key and the ACR admin password are
+  stored as Container Apps **secrets** (`secretref:`), never in plain env vars or the image.
+* Stop: `az containerapp delete -n ca-insidethegame -g rg-insidethegame --yes`, then
+  `az containerapp env delete -n cae-insidethegame -g rg-insidethegame --yes` and
+  `az acr delete -n acrinsidethegamealv -g rg-insidethegame --yes`.
