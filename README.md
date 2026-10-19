@@ -1,36 +1,56 @@
 # Inside the Game – Multi-Agent Commentary Room
 
 An AI commentary room that turns a **synthetic** live football event stream into explainable,
-personalised match intelligence. Specialist agents (stats, tactics, narration, personalisation) share
-a match "blackboard" and hand off to each other; a web overlay renders the result next to the action.
+personalised overlay cards. **Five agents, one per challenge stage**, are orchestrated as a
+**Microsoft Agent Framework workflow** (fan-out / fan-in graph) and reason with **Azure OpenAI gpt-4.1-mini**.
 
-Built for the *Inside the Game: Developer Hackathon*. **Phase 1**: data generator, metrics,
-agent layer with offline mock LLM, SSE API and overlay. Azure AI Foundry wiring is ready behind env vars.
+Built for the *Inside the Game: Developer Hackathon*.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    G[Synthetic match generator<br/>seeded, 90 min] -->|async event stream| O[CommentaryRoom orchestrator]
-    subgraph Agents [Multi-agent pipeline - shared MatchState]
-        S[Stats agent<br/>aggregates + metrics] --> T[Tactics agent<br/>control vs chaos]
-        T --> N[Narrator agent<br/>why it matters]
-        N --> P[Personaliser agent<br/>fan/analyst, language, club, player]
+    G[Synthetic match generator<br/>seeded, 90 min] -->|SSE ticks| W
+    G -->|batches of ~5 match-min<br/>flushed on goals| I
+    subgraph MAF [Microsoft Agent Framework workflow - shared RoomState blackboard]
+        I[1 Ingest<br/>validate, dedupe, anomalies<br/>to SPADL + state] --> T[2 Interpret<br/>stats, xT, control vs chaos,<br/>phase detection]
+        I --> S[Salience scout<br/>scores every event]
+        T --> E[3 Explain<br/>top moments + WHY<br/>fact-check gate]
+        S --> E
+        E --> R[4 Render<br/>schema-valid overlay cards<br/>type, priority, ttl, viz]
+        R --> P[5 Personalise<br/>fan/analyst, en/es/fr,<br/>club, player, memory]
     end
-    O --> S
-    T & N & P -.-> L[(LLM client<br/>Azure AI Foundry or local mock<br/>with automatic fallback)]
-    P -->|SSE /api/stream| W[Web overlay<br/>pitch, ticker, control gauge, feed]
+    T <-->|tool calls| M[(insidethegame-mcp<br/>MCP server: top_players,<br/>control_index)]
+    T & E & P -.-> L[(Azure OpenAI gpt-4.1-mini<br/>TPM budget + fallback)]
+    P -->|SSE cards + agent trace| W[Web overlay<br/>pitch, cards, viz hints,<br/>live agent trace, cost]
+    P <--> V[(Viewer memory)]
+    MAF -.-> O[(OpenTelemetry spans)]
 ```
 
-The five challenge stages map to: **Ingest** (generator → stream), **Interpret** (Stats + metrics),
-**Explain** (Tactics + Narrator), **Render** (SSE + overlay; every message is timed JSON),
-**Personalise** (Personaliser: mode, language, favourite club, player focus).
+| Stage | Agent | Deterministic core | LLM role (MAF `Agent`) |
+|---|---|---|---|
+| Ingest | `IngestAgent` | required fields, duplicate ids/fingerprints, time-travel, off-pitch clipping, unknown team, goal-without-shot; SPADL rows | – |
+| Interpret | `InterpretAgent` | team/player stats, xT added, control-vs-chaos index, phases (siege, high press, chaos, control, balanced) | tactical read every 15 match-min, **calls the MCP server tools**; fact-checked |
+| Explain | `SalienceScout` + `ExplainAgent` | salience score per event (xG, cards, xT, phase, late game); picks top 3 per batch | writes WHY in one batched JSON call; **every number must exist in the moment's facts**, otherwise rejected and replaced by a grounded template |
+| Render | `RenderAgent` | overlay cards validated against `CARD_SCHEMA` (`GET /api/card-schema`): type, priority 1-5, ttl, title, text, viz hint (shot_marker, pass_arrow, control_gauge, badge) | – |
+| Personalise | `PersonaliseAgent` | priority boosts for favourite club/player, fan filter, persistent `ViewerMemory` (fills missing prefs from last session) | rewrites all cards of a batch for mode + language in one call; re-fact-checked against the source card |
+
+**Throughput / quota.** Events are batched per `ITG_BATCH_S` (default 300 match-seconds, early flush on goals and
+period ends), so a batch costs at most 3 LLM calls. `TokenBudget` reserves prompt + max_tokens per call against
+both a 60 s window (`ITG_TPM_LIMIT`, default 9000 for a 10K TPM deployment) and a 10 s slice (`ITG_TPM_SLICE`); if a
+call would not fit within 9 s it falls back to the deterministic text. Batches run on a background worker so the
+pitch never stalls while the model thinks.
+
+**Observability.** `ITG_OTEL=console|otlp` turns on Agent Framework's OpenTelemetry instrumentation (workflow,
+executor, edge, chat and MCP spans) plus our `itg.<agent>` spans; the overlay shows the same trace live
+(latency, tokens, MCP tool calls, fact-check results per agent).
 
 ## Run locally
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
+pip install -e ".[dev,azure,agents,mcp]"
 uvicorn insidethegame.server:app --reload
 # open http://localhost:8000 , pick mode/language/club/player, press "Kick off"
 pytest -q
@@ -43,15 +63,17 @@ Docker: `docker build -t inside-the-game . && docker run -p 8000:8000 inside-the
 |---|---|
 | `GET /health` | liveness + active LLM provider |
 | `GET /api/match?seed=7` | full synthetic match as JSON |
-| `GET /api/stream?seed=7&speed=60&mode=fan&lang=es&club=harbour&player=H10` | SSE stream (`tick` events: `event`, `commentary[]`, `index`, `score`). `speed=60` → 1 match minute per second, `0` → as fast as possible |
+| `GET /api/stream?seed=7&speed=20&mode=fan&lang=es&club=harbour&player=H10&viewer=v1` | SSE: `tick` per raw event; `cards` per batch (`cards[]`, `trace[]`, `report`, `usage`, `phase`, `index`). `speed=60` → 1 match minute per second |
+| `GET /api/card-schema` | JSON schema of overlay cards |
 
 ### Configuration (env vars, see `.env.example`)
 `ITG_LLM_PROVIDER=mock|azure`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`,
 optional `AZURE_OPENAI_API_KEY` (if unset, managed identity via `DefaultAzureCredential`). No secrets are stored in the repo.
 If the Azure call fails or times out (4 s), the agent falls back to the deterministic English template line
 (non-English viewers see clean English until the model recovers, never a half-translated mix).
-`ITG_ORCHESTRATOR=maf` runs the agents as a **Microsoft Agent Framework** workflow (`pip install -e ".[agents]"`);
-the default sequential loop is behaviour-identical (covered by a test).
+`ITG_ORCHESTRATOR=maf` (default) runs the five-agent Agent Framework workflow; `sequential` runs the same agents in a
+plain loop (behaviour-identical, covered by a test). `ITG_USE_MCP=1` (default) gives the Interpret agent the real MCP
+server over stdio, else in-process tools. The legacy four-agent pipeline is kept in `insidethegame.agents`.
 
 ## Synthetic data disclosure
 * **All data is synthetic**, generated by `src/insidethegame/generator.py` from a random seed. No real match

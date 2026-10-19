@@ -4,3 +4,6 @@ __pycache__/
 .pytest_cache/
 .env
 .azure-cli/
+runs/*.sse
+runs/*.log
+runs/memory.json

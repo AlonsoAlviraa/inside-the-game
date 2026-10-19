@@ -2,14 +2,17 @@
 
 Run:  python -m insidethegame.mcp_server            (stdio)
       python -m insidethegame.mcp_server --http      (streamable HTTP)
-Built on the official MCP Python SDK v2 (MIT): https://github.com/modelcontextprotocol/python-sdk
+Built on the official MCP Python SDK (1.x; 2.x also works) (MIT): https://github.com/modelcontextprotocol/python-sdk
 """
 from __future__ import annotations
 import sys
 from collections import defaultdict
 from functools import lru_cache
 
-from mcp.server.mcpserver import MCPServer
+try:  # mcp 1.x (what Microsoft Agent Framework's MCP client currently speaks)
+    from mcp.server.fastmcp import FastMCP as MCPServer
+except ImportError:  # mcp 2.x
+    from mcp.server.mcpserver import MCPServer
 
 from . import xt
 from .generator import MatchGenerator
@@ -27,9 +30,9 @@ def _events(seed: int) -> tuple[dict, ...]:
 
 
 @mcp.tool()
-def match_summary(seed: int = 7) -> dict:
-    """Final score, teams and per-team totals (passes, completion, shots, xG, xT) for a synthetic match."""
-    evs = _events(seed)
+def match_summary(seed: int = 7, up_to_minute: int = 200) -> dict:
+    """Score and per-team totals (passes, completion, shots, xG, xT) up to a match minute (live-safe)."""
+    evs = [e for e in _events(seed) if e["minute"] <= up_to_minute or e["type"] == "match_start"]
     meta = evs[0]["meta"]
     t = {s["id"]: defaultdict(float) for s in (meta["home"], meta["away"])}
     for e in evs:
@@ -43,7 +46,15 @@ def match_summary(seed: int = 7) -> dict:
     out = {k: {"passes": int(v["passes"]), "completion": round(v["completed"] / max(v["passes"], 1), 3),
                "shots": int(v["shots"]), "xg": round(v["xg"], 2), "xt": round(v["xt"], 2)} for k, v in t.items()}
     return {"synthetic": True, "seed": seed, "home": meta["home"]["name"], "away": meta["away"]["name"],
-            "score": evs[-1]["score"], "teams": out}
+            "up_to_minute": up_to_minute, "score": _score(evs, meta), "teams": out}
+
+
+def _score(evs, meta) -> dict:
+    sc = {meta["home"]["id"]: 0, meta["away"]["id"]: 0}
+    for e in evs:
+        if e["type"] == "goal":
+            sc = dict(e["score"])
+    return sc
 
 
 @mcp.tool()
@@ -56,10 +67,12 @@ def spadl_actions(seed: int = 7, from_minute: int = 0, to_minute: int = 120, lim
 
 
 @mcp.tool()
-def top_players(seed: int = 7, metric: str = "xt", n: int = 5) -> list[dict]:
-    """Top players by 'xt' (expected threat added), 'xg', or 'pass_quality' (avg 0-100)."""
+def top_players(seed: int = 7, metric: str = "xt", n: int = 5, up_to_minute: int = 200) -> list[dict]:
+    """Top players by 'xt' (expected threat added), 'xg', or 'pass_quality' (avg 0-100) up to a minute."""
     agg: dict[str, dict] = defaultdict(lambda: defaultdict(float))
     for e in _events(seed):
+        if e["minute"] > up_to_minute:
+            continue
         if e["type"] == "pass":
             a = agg[e["player_id"]]
             a["name"], a["team"] = e["player"], e["team"]
