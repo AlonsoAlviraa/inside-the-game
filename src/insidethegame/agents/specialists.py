@@ -142,6 +142,9 @@ _TR = {
 }
 
 
+_LANG_NAMES = {"en": "English", "es": "Spanish (Spain)", "fr": "French"}
+
+
 class PersonaliserAgent:
     name = "personaliser"
     instructions = ("Rewrite the commentary for the viewer profile: 'fan' = short, emotional, no jargon; "
@@ -175,5 +178,11 @@ class PersonaliserAgent:
                 text += f" [control {st.index['control']}, chaos {st.index['chaos']}]"
         fallback = self._mock_translate(text, profile.language) if profile.language != "en" else text
         if profile.language != "en" or profile.mode == "fan":
-            text = await self.llm.complete(self.instructions, f"Profile: {profile}. Text: {text}", fallback=fallback)
+            lang_name = _LANG_NAMES.get(profile.language, profile.language)
+            prompt = (f"Viewer mode: {profile.mode}. Favourite club: {profile.club or 'none'}. "
+                      f"Favourite player: {profile.player or 'none'}. Target language: {lang_name}.\n"
+                      f"Source commentary (English): {text}\n"
+                      f"Reply with only the rewritten commentary, entirely in {lang_name}, max 2 sentences. "
+                      "Keep player and team names unchanged.")
+            text = await self.llm.complete(self.instructions, prompt, fallback=fallback)
         return AgentOutput(self.name, item.kind, text, round(imp, 2), {**d, "source_agent": item.agent})
