@@ -9,7 +9,12 @@ dependencies = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
 
 [project.optional-dependencies]
 azure = ["openai>=1.40", "azure-identity>=1.17"]
+agents = ["agent-framework-core>=1.0"]
+mcp = ["mcp>=2"]
 dev = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+insidethegame-mcp = "insidethegame.mcp_server:main"
 
 [build-system]
 requires = ["setuptools>=68"]

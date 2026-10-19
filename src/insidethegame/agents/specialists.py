@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from ..metrics import ControlChaosIndex
+from .. import xt
 from .base import AgentOutput, MatchState, ViewerProfile
 from .llm import LLMClient
 
@@ -32,6 +33,13 @@ class StatsAgent:
             ps = st.player_stats[ev["player_id"]]
             ps["passes"] += 1
             ps["quality_sum"] += ev["quality"]
+            gain = xt.added(ev)
+            ts["xt"] += gain
+            ps["xt"] += gain
+            if gain >= 0.04:
+                out.append(AgentOutput(self.name, "stat", f"{ev['player']} finds a line-breaking pass: "
+                                       f"+{gain:.2f} xT (expected threat)", 0.5,
+                                       {"player_id": ev["player_id"], "xt_added": gain}))
             if ev["speed_kmh"] > 90 and ev["success"]:
                 out.append(AgentOutput(self.name, "stat", f"{ev['player']} zips a {ev['length_m']:.0f} m pass at "
                                        f"{ev['speed_kmh']:.0f} km/h", 0.3, {"player_id": ev["player_id"]}))
@@ -128,36 +136,22 @@ class NarratorAgent:
                             {"event_type": t, "team": ev.get("team"), "player_id": ev.get("player_id")})]
 
 
-_TR = {
-    "es": {"GOAL!": "¡GOL!", "scores for": "marca para", "Half-time": "Descanso", "Full-time": "Final",
-           "forces a save": "obliga al portero a intervenir", "is blocked": "ve su disparo bloqueado",
-           "fires wide": "dispara fuera", "from": "desde", "card for": "tarjeta para", "of": "de",
-           "Yellow": "Amarilla", "Red": "Roja", "change:": "cambio:", "on for": "entra por",
-           "The second half is under way.": "Arranca la segunda parte.", "Shot": "Disparo"},
-    "fr": {"GOAL!": "BUT !", "scores for": "marque pour", "Half-time": "Mi-temps", "Full-time": "Fin du match",
-           "forces a save": "oblige le gardien à s'employer", "is blocked": "est contré",
-           "fires wide": "tire à côté", "from": "à", "card for": "carton pour", "of": "de",
-           "Yellow": "Jaune", "Red": "Rouge", "change:": "changement :", "on for": "remplace",
-           "The second half is under way.": "La seconde période est lancée.", "Shot": "Tir"},
-}
-
-
 _LANG_NAMES = {"en": "English", "es": "Spanish (Spain)", "fr": "French"}
 
 
 class PersonaliserAgent:
     name = "personaliser"
-    instructions = ("Rewrite the commentary for the viewer profile: 'fan' = short, emotional, no jargon; "
-                    "'analyst' = keep numbers, add metric context. Translate to the target language. "
-                    "Boost items about the favourite club or player.")
+    instructions = ("You rewrite live football commentary for one viewer. Use only facts in the source line; "
+                    "never add events, numbers or names. Keep every player and team name exactly as written.")
+    FAN_STYLE = ("Fan mode: one short, punchy sentence (max 20 words) a supporter would shout at the TV. "
+                 "Plain words, no metrics, no decimals, no jargon such as xG, index or final third. "
+                 "At most one exclamation mark. If the favourite club or player is involved, speak with "
+                 "their supporters' excitement; otherwise stay neutral.")
+    ANALYST_STYLE = ("Analyst mode: max 2 concise sentences. Keep every number from the source and say what it "
+                     "means tactically.")
 
     def __init__(self, llm: LLMClient):
         self.llm = llm
-
-    def _mock_translate(self, text: str, lang: str) -> str:
-        for k, v in sorted(_TR.get(lang, {}).items(), key=lambda kv: -len(kv[0])):
-            text = text.replace(k, v)
-        return text
 
     async def personalise(self, item: AgentOutput, profile: ViewerProfile, st: MatchState) -> AgentOutput | None:
         imp = item.importance
@@ -176,13 +170,15 @@ class PersonaliserAgent:
             text = item.text
             if item.kind == "tactic" and st.index:
                 text += f" [control {st.index['control']}, chaos {st.index['chaos']}]"
-        fallback = self._mock_translate(text, profile.language) if profile.language != "en" else text
+        # Fallback (LLM down / mock): the clean English source line. A half-translated word-swap reads worse
+        # than plain English, so the overlay simply shows English until the model is back.
+        fallback = text
         if profile.language != "en" or profile.mode == "fan":
             lang_name = _LANG_NAMES.get(profile.language, profile.language)
-            prompt = (f"Viewer mode: {profile.mode}. Favourite club: {profile.club or 'none'}. "
-                      f"Favourite player: {profile.player or 'none'}. Target language: {lang_name}.\n"
+            club = st.team_name(profile.club) if profile.club else "none"
+            prompt = (f"{self.FAN_STYLE if profile.mode == 'fan' else self.ANALYST_STYLE}\n"
+                      f"Favourite club: {club}. Favourite player id: {profile.player or 'none'}.\n"
                       f"Source commentary (English): {text}\n"
-                      f"Reply with only the rewritten commentary, entirely in {lang_name}, max 2 sentences. "
-                      "Keep player and team names unchanged.")
+                      f"Reply with only the rewritten commentary, written entirely in {lang_name}.")
             text = await self.llm.complete(self.instructions, prompt, fallback=fallback)
         return AgentOutput(self.name, item.kind, text, round(imp, 2), {**d, "source_agent": item.agent})

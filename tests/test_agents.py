@@ -29,9 +29,29 @@ def test_fan_vs_analyst_differ():
     assert len(fan) < len(ana)
 
 
-def test_spanish_translation():
+def test_non_english_fallback_is_clean_english():
+    # Without an LLM, non-English viewers get the plain English line, never a half-translated mix.
     _, out = run_match(ViewerProfile(mode="fan", language="es"))
-    assert any("Final" in o["text"] or "¡GOL!" in o["text"] for o in out)
+    assert any("Full-time" in o["text"] for o in out)
+    assert not any("¡GOL!" in o["text"] or " desde " in o["text"] for o in out)
+
+
+class Recorder:
+    name = "rec"
+
+    def __init__(self):
+        self.prompts = []
+
+    async def complete(self, system, user, *, fallback=""):
+        self.prompts.append(user)
+        return fallback
+
+
+def test_fan_prompt_is_tight_and_targets_language():
+    rec = Recorder()
+    run_match(ViewerProfile(mode="fan", language="es", club="harbour"), llm=rec)
+    fan = [p for p in rec.prompts if p.startswith("Fan mode")]
+    assert fan and all("max 20 words" in p and "Spanish" in p for p in fan)
 
 
 def test_player_focus_boosts_importance():
@@ -53,3 +73,21 @@ def test_llm_failure_recovers_to_mock():
     llm = ResilientLLM(Broken())
     room, out = run_match(ViewerProfile(mode="fan"), llm=llm)
     assert out and llm.failures > 0 and not room.errors
+
+
+def test_maf_workflow_matches_sequential():
+    import pytest
+    pytest.importorskip("agent_framework")
+    prof = ViewerProfile(mode="analyst")
+    seq_room = CommentaryRoom(MockLLM(), orchestrator="sequential")
+    maf_room = CommentaryRoom(MockLLM(), orchestrator="maf")
+    assert maf_room.orchestrator == "maf"
+    evs = list(MatchGenerator(3).events())[:600]
+
+    async def go(room):
+        out = []
+        for ev in evs:
+            out += await room.process(ev, prof)
+        return out
+    assert asyncio.run(go(seq_room)) == asyncio.run(go(maf_room))
+    assert not maf_room.errors
