@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
 
@@ -15,7 +15,8 @@ from .room import CARD_SCHEMA, CommentaryRoom, ViewerMemory, ViewerProfile
 FLUSH = {"goal", "period_end", "match_end"}
 from .generator import MatchGenerator, stream
 from . import analyst, insights
-from .teams import fixture_list
+from . import league
+from .teams import LEAGUE_NAME, _POOL, club_list, crest_svg, fixture_list
 
 WEB_DIR = Path(os.getenv("ITG_WEB_DIR", Path(__file__).resolve().parents[2] / "web"))
 app = FastAPI(title="Inside the Game - Commentary Room", version="0.1.0")
@@ -134,6 +135,45 @@ class Question(BaseModel):
 async def ask(q: Question) -> dict:
     """Ask-the-analyst: grounded Q&A over the match so far (only facts up to `minute`, so no spoilers)."""
     return await analyst.ask(q.seed, q.question, q.minute, q.lang)
+
+
+@app.get("/api/league")
+async def league_view() -> dict:
+    """Fictional league: clubs (with generated crests), table after the simulated matchdays, fixtures/results."""
+    fx = fixture_list()
+    for f in fx:
+        if f["seed"] >= 1000:
+            f["score"] = league.result(f["seed"])["score"]
+    return {"synthetic": True, "name": LEAGUE_NAME, "clubs": club_list(), "table": league.table(), "fixtures": fx}
+
+
+@app.get("/api/crest/{club}.svg")
+async def crest(club: str):
+    if club not in _POOL:
+        return PlainTextResponse("unknown club", status_code=404)
+    return Response(crest_svg(club), media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/api/preview")
+async def preview(seed: int = 7) -> dict:
+    """Pre-match preview: table position & form, synthetic head-to-head archive, line-ups, pre-match probabilities."""
+    return league.preview(seed)
+
+
+@app.get("/api/winprob")
+async def winprob(seed: int = 7) -> dict:
+    """Live win probability per minute (Poisson on prior + observed xG rate; each point uses only past events)."""
+    return {"model": "poisson(prior+xG rate)", "series": league.win_probability(seed)}
+
+
+@app.get("/api/formation")
+async def formation(seed: int = 7, minute: int = Query(200, ge=0, le=200)) -> dict:
+    return league.formation(seed, minute)
+
+
+@app.get("/api/compare")
+async def compare(seed: int, a: str, b: str, minute: int = Query(200, ge=0, le=200)) -> dict:
+    return league.compare(seed, a, b, minute)
 
 
 @app.get("/api/usage")
