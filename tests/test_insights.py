@@ -81,9 +81,10 @@ def test_api_endpoints():
 def test_meta_only_and_ui_features():
     j = c.get("/api/match?seed=11&meta_only=true").json()
     assert len(j["events"]) == 1 and j["events"][0]["meta"]["home"]["name"] == "Northgate Falcons"
-    html = c.get("/").text
+    html = c.get("/").text + c.get("/static/app.js").text
     for needle in ['id="pitch"', 'id="mom"', 'id="timeline"', "/api/ask", "/api/report", "speechSynthesis",
-                   'data-v="neutral"', 'id="pipe"', "format=md"]:
+                   'data-v="neutral"', 'id="pipe"', "format=md", "/api/winprob", "/api/preview",
+                   "/api/formation", "/api/compare", "/api/league", 'id="goal"', 'id="now"']:
         assert needle in html
 
 

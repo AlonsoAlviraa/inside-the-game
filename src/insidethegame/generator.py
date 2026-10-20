@@ -20,7 +20,7 @@ from dataclasses import asdict
 from typing import AsyncIterator, Iterator
 
 from . import metrics
-from .teams import Team, Player, default_teams, teams_for_seed
+from .teams import Team, Player, default_teams, teams_for_seed, STADIUM
 
 HALF_S = 45 * 60
 
@@ -74,7 +74,7 @@ class MatchGenerator:
                      "players": [asdict(p) for p in self.home.players + self.home.bench]},
             "away": {"id": self.away.id, "name": self.away.name, "short": self.away.short, "color": self.away.color,
                      "players": [asdict(p) for p in self.away.players + self.away.bench]},
-            "venue": "Saltmarsh Park (fictional)", "seed": self.seed, "synthetic": True})
+            "venue": STADIUM.get(self.home.id, "Saltmarsh Park") + " (fictional)", "seed": self.seed, "synthetic": True})
         for period, (start, end) in enumerate([(0, HALF_S), (HALF_S, 2 * HALF_S)], start=1):
             if period == 2:
                 self._period, self._offset = 2, max(0.0, t - HALF_S + 900)  # 15-min half-time interval
@@ -206,7 +206,7 @@ async def stream(seed: int = 7, speed: float = 60.0) -> AsyncIterator[dict]:
     speed<=0 means no waiting at all."""
     last_t = 0.0
     for ev in MatchGenerator(seed).events():
-        if speed > 0:
+        if speed > 0 and ev["type"] != "period_start":  # skip the half-time interval
             await asyncio.sleep(max(0.0, (ev["t"] - last_t) / speed))
         last_t = ev["t"]
         yield ev
