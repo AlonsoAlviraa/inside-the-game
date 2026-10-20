@@ -6,13 +6,16 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
 
 from .room import CARD_SCHEMA, CommentaryRoom, ViewerMemory, ViewerProfile
 
 FLUSH = {"goal", "period_end", "match_end"}
 from .generator import MatchGenerator, stream
+from . import analyst, insights
+from .teams import fixture_list
 
 WEB_DIR = Path(os.getenv("ITG_WEB_DIR", Path(__file__).resolve().parents[2] / "web"))
 app = FastAPI(title="Inside the Game - Commentary Room", version="0.1.0")
@@ -98,6 +101,43 @@ async def sse(seed: int = 7, speed: float = Query(60.0, ge=0, le=5000), mode: st
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/matches")
+async def matches() -> dict:
+    """Selectable synthetic fixtures (fictional clubs)."""
+    return {"synthetic": True, "matches": fixture_list()}
+
+
+@app.get("/api/report")
+async def report(seed: int = 7, minute: int = Query(200, ge=0, le=200), format: str = "json", recap: bool = False,
+                 lang: str = "en"):
+    """Team/player stats, momentum, key moments; `format=md` returns an exportable Markdown report.
+    `recap=true` adds a grounded LLM recap (checked by numbers + semantic guards, rules fallback)."""
+    r = insights.report(seed, minute)
+    rc = await analyst.recap(seed, minute, lang) if recap else None
+    if format == "md":
+        return PlainTextResponse(insights.report_markdown(r, rc["text"] if rc else None), media_type="text/markdown",
+                                 headers={"Content-Disposition": f'attachment; filename="match-{seed}-report.md"'})
+    return {**r, "recap": rc}
+
+
+class Question(BaseModel):
+    seed: int = 7
+    question: str = Field(min_length=1, max_length=300)
+    minute: int = Field(200, ge=0, le=200)
+    lang: str = "en"
+
+
+@app.post("/api/ask")
+async def ask(q: Question) -> dict:
+    """Ask-the-analyst: grounded Q&A over the match so far (only facts up to `minute`, so no spoilers)."""
+    return await analyst.ask(q.seed, q.question, q.minute, q.lang)
+
+
+@app.get("/api/usage")
+async def usage() -> dict:
+    return {"analyst_desk": analyst.usage()}
 
 
 @app.get("/api/card-schema")

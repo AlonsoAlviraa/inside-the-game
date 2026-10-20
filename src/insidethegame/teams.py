@@ -54,3 +54,43 @@ def default_teams() -> tuple[Team, Team]:
     home = Team("harbour", "Harbour City Mariners", "HCM", "#1f6feb", 0.58, h_xi, h_b)
     away = Team("ridge", "Ironridge Rovers", "IRR", "#d4380d", 0.52, a_xi, a_b)
     return home, away
+
+
+# Extra fictional clubs for the match selector (synthetic; names invented, colours arbitrary).
+_POOL = {
+    "harbour": ("Harbour City Mariners", "HCM", "#1f6feb", 0.58),
+    "ridge": ("Ironridge Rovers", "IRR", "#d4380d", 0.52),
+    "falcons": ("Northgate Falcons", "NGF", "#8957e5", 0.60),
+    "lowmoor": ("Lowmoor Athletic", "LMA", "#2ea043", 0.49),
+    "vale": ("Silverdale Vale", "SDV", "#e3b341", 0.55),
+    "quarry": ("Quarrytown United", "QTU", "#db61a2", 0.54),
+}
+
+# seed -> (home, away, label). Seeds not listed use the default Harbour v Ironridge pairing.
+FIXTURES = {
+    7: ("harbour", "ridge", "Matchday 1 · Harbour Bowl"),
+    11: ("falcons", "lowmoor", "Matchday 2 · Northgate Park"),
+    23: ("vale", "quarry", "Matchday 3 · Silverdale Ground"),
+    42: ("quarry", "harbour", "Matchday 4 · Quarry Lane"),
+    58: ("ridge", "falcons", "Matchday 5 · Ironridge Works"),
+}
+
+
+def make_team(key: str, offset: int) -> Team:
+    name, short, color, strength = _POOL[key]
+    xi, bench = _squad(short[0] + short[-1], offset, strength - 0.03)
+    return Team(key, name, short, color, strength, xi, bench)
+
+
+def teams_for_seed(seed: int) -> tuple[Team, Team]:
+    if seed not in FIXTURES or FIXTURES[seed][:2] == ("harbour", "ridge"):
+        return default_teams()
+    h, a, _ = FIXTURES[seed]
+    keys = list(_POOL)
+    return make_team(h, keys.index(h) * 5), make_team(a, keys.index(a) * 5 + 3)
+
+
+def fixture_list() -> list[dict]:
+    return [{"seed": s, "home": _POOL[h][0], "away": _POOL[a][0], "home_short": _POOL[h][1],
+             "away_short": _POOL[a][1], "home_color": _POOL[h][2], "away_color": _POOL[a][2], "label": lbl}
+            for s, (h, a, lbl) in FIXTURES.items()]

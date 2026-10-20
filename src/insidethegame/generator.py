@@ -20,7 +20,7 @@ from dataclasses import asdict
 from typing import AsyncIterator, Iterator
 
 from . import metrics
-from .teams import Team, Player, default_teams
+from .teams import Team, Player, default_teams, teams_for_seed
 
 HALF_S = 45 * 60
 
@@ -30,7 +30,7 @@ class MatchGenerator:
         self.seed = seed
         self.rng = random.Random(seed)
         if home is None or away is None:
-            home, away = default_teams()
+            home, away = teams_for_seed(seed)
         self.home, self.away = home, away
         self.score = {home.id: 0, away.id: 0}
         self.on_pitch = {home.id: list(home.players), away.id: list(away.players)}
