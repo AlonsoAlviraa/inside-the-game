@@ -88,8 +88,10 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
 .kpis{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.kpi{background:var(--p2);border-radius:8px;padding:7px}.kpi b{display:block;font-size:1.15em}.kpi span{color:var(--mute);font-size:.78em}
 .log{font:11px/1.45 ui-monospace,monospace;color:var(--mute)}.log div{border-top:1px solid var(--line);padding:3px 0}
 /* other views */
-.view{display:none}.view.on{display:grid}#v-live.view.on{display:grid}
-#v-league,#v-about{padding:14px;gap:14px;grid-template-columns:1fr 1fr;overflow:auto;flex:1}
+.view{display:none}.view.on{display:grid}#v-live:not(.on){display:none}#v-live.view.on{display:grid}
+#v-league,#v-about{padding:14px;gap:14px;grid-template-columns:1.25fr 1fr;overflow:auto;flex:1;align-items:start}
+#teamdrawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,100%);background:var(--p);border-left:1px solid var(--line);z-index:50;overflow:auto;padding:16px;transform:translateX(100%);transition:transform .25s;box-shadow:-20px 0 40px #0008}#teamdrawer.on{transform:none}
+.trow:hover{background:var(--p2)}
 .panel{background:var(--p);border:1px solid var(--line);border-radius:10px;padding:14px}
 .fx{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:.9em}.fx img{width:18px;height:22px}.fx .sc{font-weight:700;min-width:44px;text-align:center}.fx button{margin-left:auto}
 #toast{position:fixed;right:14px;bottom:14px;z-index:70;display:flex;flex-direction:column;gap:6px}#toast div{background:var(--p2);border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:8px;padding:7px 12px;font-size:.9em;font-weight:600}
@@ -143,8 +145,16 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
  </div>
 </div>
 
-<div class="view" id="v-league"><div class="panel"><h2 id="lgname">League table</h2><p class="cap">Fictional 16-club league after 6 simulated matchdays.</p><table id="ltable"></table></div>
- <div class="panel"><h2>Fixtures & results</h2><div style="display:flex;gap:8px;align-items:center;margin:6px 0"><select id="md"></select><label class="muted"><input type="checkbox" id="spoil"> Show scores</label></div><div id="fixtures"></div></div></div>
+<div class="view" id="v-league">
+ <div class="panel"><div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><h2 id="lgname">League</h2><span class="muted" id="lgdayl">after matchday 30</span>
+  <input type="range" id="lgday" min="1" max="30" value="30" style="flex:1;min-width:160px;accent-color:var(--acc)"></div>
+  <p class="cap">Fictional 16 clubs, double round robin (30 matchdays, 240 matches), every result from the synthetic engine. Click a club for its page. ▲▼ = change since previous matchday.</p><table id="ltable"></table></div>
+ <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+  <div class="panel"><h2>Standings over time</h2><p class="cap" id="poscap"></p><canvas id="poschart" width="700" height="220" style="width:100%"></canvas></div>
+  <div class="panel"><h2>Season leaders</h2><div id="leaders" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 14px"></div></div>
+  <div class="panel"><h2>Results</h2><div style="display:flex;gap:8px;align-items:center;margin:6px 0"><select id="md"></select><label class="muted"><input type="checkbox" id="spoil"> Show scores</label></div><div id="fixtures"></div></div>
+ </div></div>
+<div id="teamdrawer"><button class="btn ghost" style="float:right" onclick="$('teamdrawer').classList.remove('on')">✕</button><div id="teambody"></div></div>
 
 <div class="view" id="v-about"><div class="panel"><h2>How it works</h2><p class="muted">The browser plays the event feed on one match clock: pitch, score, timeline and feed always agree. Each key event gets an instant caption from the data; the five-agent AI room (Ingest → Interpret → Explain → Render → Personalise, Microsoft Agent Framework on Azure OpenAI gpt-4.1-mini) rewrites it in place once its version passes the numbers, claims and player checks (✦).</p></div>
  <div class="panel"><h2>Synthetic & brand-free</h2><p class="muted">All clubs, players, crests and matches are generated. Win probability uses a simple Poisson model on score, time left and xG. Hosted on Azure Container Apps; about one cent of AI per match.</p></div></div>

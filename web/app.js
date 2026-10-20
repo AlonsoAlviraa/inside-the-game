@@ -23,7 +23,7 @@ S=fresh();
 document.querySelectorAll(".seg[id]").forEach(s=>s.onclick=e=>{const b=e.target.closest("button");if(!b||!(s.id in opt))return;
  s.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));opt[s.id]=b.dataset.v;if(s.id==="lang")sugg();});
 document.querySelectorAll(".views button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".views button").forEach(x=>x.classList.toggle("on",x===b));
- document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on",v.id==="v-"+b.dataset.v));if(b.dataset.v==="league")loadLeague();});
+ document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on",v.id==="v-"+b.dataset.v));if(b.dataset.v==="league"&&!LG)loadLeague();});
 document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>tab(b.dataset.p));
 function tab(p){document.querySelectorAll("#tabs button").forEach(x=>x.classList.toggle("on",x.dataset.p===p));document.querySelectorAll(".pane").forEach(x=>x.classList.toggle("on",x.id==="p-"+p));
  if(p==="tactics")loadTactics();if(p==="compare")loadCompare();if(p==="win")drawWin();if(p==="mom"&&S.report)drawMomentum(S.report);}
@@ -205,14 +205,6 @@ async function drawWin(){if(!meta)return;if(!S.wp||S.wp.seed!==seed)S.wp={seed,s
  [0,.5,1].forEach(v=>{const y=Hh-20-(Hh-40)*v;g.beginPath();g.moveTo(50,y);g.lineTo(W,y);g.stroke();g.fillText(Math.round(v*100)+"%",4,y+5);});
  [0,15,30,45,60,75,90].forEach(m=>g.fillText(m+"'",50+(W-60)*m/91,Hh-2));
  [["home",h.color],["draw","#9fb0c8"],["away",a.color]].forEach(([k,cl])=>{g.strokeStyle=cl;g.lineWidth=4;g.beginPath();pts.filter(p=>!p.final).forEach((p,i)=>{const x=50+(W-60)*p.minute/91,y=Hh-20-(Hh-40)*p[k];i?g.lineTo(x,y):g.moveTo(x,y);});g.stroke();});}
-async function loadPreview(){const p=await fetch(`/api/preview?seed=${seed}`).then(r=>r.json());const h=H(),a=A(),pr=p.pre_match_probability,rec=p.head_to_head_record;
- const form=t=>t?.table?`<span class="form">${t.table.form.map(f=>`<b class="${f}">${f}</b>`).join("")||"—"}</span>`:"—";
- const pos=t=>t?.table&&t.table.played?`${t.table.position}${["th","st","nd","rd"][t.table.position%10>3||[11,12,13].includes(t.table.position)?0:t.table.position%10]} · ${t.table.points} pts`:"Season opener";
- $("hr").textContent=p.home.table&&p.home.table.played?pos(p.home):"";$("ar").textContent=p.away.table&&p.away.table.played?pos(p.away):"";
- $("prev").innerHTML=`<div class="g3"><div><h3>Pre-match odds</h3><p class="cap">From team ratings (${p.home.rating} v ${p.away.rating}) with a small home advantage.</p><div class="probbar">${[[h.short,pr.home,h.color],["Draw",pr.draw,"#4b5568"],[a.short,pr.away,a.color]].map(([l,v,c])=>`<div style="width:${v*100}%;background:${c}">${l} ${Math.round(v*100)}%</div>`).join("")}</div></div>
- <div><h3>League position & form</h3><p class="cap">${p.matchday?`Before matchday ${p.matchday}`:"After 6 matchdays (showcase friendly)"}</p><table><tr><td style="color:${h.color}">${esc(h.name)}</td><td>${pos(p.home)}</td><td>${form(p.home)}</td></tr><tr><td style="color:${a.color}">${esc(a.name)}</td><td>${pos(p.away)}</td><td>${form(p.away)}</td></tr></table></div>
- <div><h3>Head-to-head (synthetic archive)</h3><p class="cap">${h.short} ${rec.home_wins} wins · ${rec.draws} draws · ${a.short} ${rec.away_wins} wins</p>${p.head_to_head.map(m=>`<div>${esc(tm(m.home).short)} ${m.score[m.home]} – ${m.score[m.away]} ${esc(tm(m.away).short)} <span class="muted">${esc(m.label)}</span></div>`).join("")}</div></div>
- <div class="g2" style="margin-top:18px">${[h,a].map(t=>`<div><h3 style="color:${t.color}">${esc(t.name)} · 4-3-3</h3><table>${p.lineups[t.id].map(pl=>`<tr><td>${pl.number}</td><td>${esc(pl.name)}</td><td>${pl.position}</td></tr>`).join("")}</table></div>`).join("")}</div>`;}
 let tacTeam=null;async function loadTactics(){if(!meta)return;tacTeam=tacTeam&&tm(tacTeam)?.id===tacTeam?tacTeam:H().id;
  $("tteam").innerHTML=[H(),A()].map(t=>`<button data-v="${t.id}" class="${t.id===tacTeam?"on":""}">${esc(t.name)}</button>`).join("");$("tteam").onclick=e=>{const b=e.target.closest("button");if(b){tacTeam=b.dataset.v;loadTactics();}};
  const f=await fetch(`/api/formation?seed=${seed}&minute=${S.running?S.clockMin:200}`).then(r=>r.json()),c=$("tac").getContext("2d"),t=tm(tacTeam);drawPitch(c);
@@ -234,11 +226,6 @@ async function ask(){const q=$("q").value.trim();if(!q)return;$("q").value="";co
  catch(e){m.textContent="The analyst desk is unavailable right now.";}}
 $("askf").onsubmit=e=>{e.preventDefault();ask();};
 // ------------------------------------------------------------------ league view
-let league=null;async function loadLeague(){if(!league)league=await fetch("/api/league").then(r=>r.json());$("lgname").textContent=league.name;
- $("ltable").innerHTML="<tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th><th>Form</th></tr>"+league.table.map(r=>`<tr><td>${r.position}</td><td><img src="${r.crest}" alt="">${esc(r.name)}</td><td>${r.played}</td><td>${r.won}</td><td>${r.drawn}</td><td>${r.lost}</td><td>${r.gd>0?"+":""}${r.gd}</td><td><b>${r.points}</b></td><td class="form">${r.form.map(f=>`<b class="${f}">${f}</b>`).join("")}</td></tr>`).join("");
- if(!$("md").options.length){$("md").innerHTML=[1,2,3,4,5,6].map(d=>`<option value="${d}">Matchday ${d}</option>`).join("")+'<option value="0">Showcase friendlies</option>';$("md").onchange=$("spoil").onchange=fx;}fx();}
-function fx(){const d=+$("md").value,sp=$("spoil").checked;$("fixtures").innerHTML=league.fixtures.filter(f=>f.matchday===d).map(f=>`<div class="fx"><img src="/api/crest/${f.home_id}.svg" alt=""><span>${esc(f.home)}</span><span class="sc">${sp&&f.score?`${f.score[f.home_id]} – ${f.score[f.away_id]}`:"v"}</span><span>${esc(f.away)}</span><img src="/api/crest/${f.away_id}.svg" alt=""><button class="btn ghost" data-s="${f.seed}" style="padding:6px 12px">Watch</button></div>`).join("");
- $("fixtures").querySelectorAll("button").forEach(b=>b.onclick=()=>{$("match").value=b.dataset.s;$("match").onchange();document.querySelector('.views button[data-v="live"]').click();});}
 // ------------------------------------------------------------------ match lifecycle
 function setMeta(m){meta=m;[m.home,m.away].forEach(t=>t.players.forEach(p=>NUMS[p.id]=p.number));const h=m.home,a=m.away;$("hn").textContent=h.name;$("an").textContent=a.name;$("hc").src=crest(h.id);$("ac").src=crest(a.id);
  document.documentElement.style.setProperty("--home",h.color);document.documentElement.style.setProperty("--away",a.color);
@@ -266,4 +253,55 @@ async function fullTime(){$("ftbody").innerHTML="<p>The agents are writing the f
  <h3>Key moments</h3>${r.key_moments.filter(k=>k.importance>=4).map(k=>`<div class="hl"><span class="ic">${ICON[k.kind]||"•"}</span><div>${esc(k.label)}</div><span class="mm">${k.minute}'</span></div>`).join("")}`;}
 fetch("/api/matches").then(r=>r.json()).then(j=>{fixtures=j.matches;const groups={};fixtures.forEach(f=>{const g=f.matchday?`Matchday ${f.matchday}`:"Showcase friendlies";(groups[g]=groups[g]||[]).push(f);});
  $("match").innerHTML=Object.entries(groups).map(([g,fs])=>`<optgroup label="${g}">${fs.map(f=>`<option value="${f.seed}">${esc(f.home)} v ${esc(f.away)}</option>`).join("")}</optgroup>`).join("");$("match").value="7";seed=7;loadMatch();});
+// ------------------------------------------------------------------ pre-match comparison (league matches before this fixture)
+async function loadPreview(){const p=await fetch(`/api/preview?seed=${seed}`).then(r=>r.json());const h=H(),a=A(),hs=p.home,as=p.away,pr=p.pre_match_probability;
+ const ord=n=>n+(["th","st","nd","rd"][(n%100>10&&n%100<14)||n%10>3?0:n%10]);
+ $("hr").textContent=hs.table?`${ord(hs.table.position)} · ${hs.table.points} pts`:"";$("ar").textContent=as.table?`${ord(as.table.position)} · ${as.table.points} pts`:"";
+ const form=t=>t.table?`<span class="form">${t.table.form.map(f=>`<b class="${f}">${f}</b>`).join("")}</span>`:"–";
+ const v=(t,f)=>t.season?f(t.season):"–",pm=k=>t=>t.per_match[k];
+ const rows=[["Position",t=>t.table?ord(t.table.position):"–",t=>t.table?-t.table.position:null],["Points",t=>t.table?.points??"–",t=>t.table?.points],
+  ["Record (W-D-L)",t=>t.table?`${t.table.won}-${t.table.drawn}-${t.table.lost}`:"–",null],["Form (last 5)",form,null],
+  ["Goals for / match",t=>v(t,pm("goals_for")),t=>t.season?.per_match.goals_for],["Goals against / match",t=>v(t,pm("goals_against")),t=>t.season&&-t.season.per_match.goals_against],
+  ["xG for / match",t=>v(t,pm("xg_for")),t=>t.season?.per_match.xg_for],["xG against / match",t=>v(t,pm("xg_against")),t=>t.season&&-t.season.per_match.xg_against],
+  ["Shots / match",t=>v(t,pm("shots")),t=>t.season?.per_match.shots],["Shots against / match",t=>v(t,pm("shots_against")),t=>t.season&&-t.season.per_match.shots_against],
+  ["Possession* %",t=>v(t,pm("possession_pass_share_pct")),t=>t.season?.per_match.possession_pass_share_pct],["Pass completion %",t=>v(t,pm("pass_completion_pct")),t=>t.season?.per_match.pass_completion_pct],
+  ["Clean sheets",t=>v(t,s=>s.totals.clean_sheets),t=>t.season?.totals.clean_sheets],["Top scorer",t=>t.season?.top_scorer?`${esc(t.season.top_scorer.name)} (${t.season.top_scorer.goals})`:"–",null]];
+ const cmp=rows.map(([l,f,k])=>{const x=k&&k(hs),y=k&&k(as),bh=k&&x!=null&&y!=null&&x>y,ba=k&&x!=null&&y!=null&&y>x;
+  return `<tr><td style="text-align:left;${bh?"color:var(--acc);font-weight:700":""}">${f(hs)}</td><td class="muted" style="text-align:center;font-size:.85em">${l}</td><td style="${ba?"color:var(--acc);font-weight:700":""}">${f(as)}</td></tr>`;}).join("");
+ const mt=p.meetings.length?p.meetings.map(m=>`<div class="fx"><span>MD ${m.matchday}</span><img src="/api/crest/${m.home}.svg" alt=""><span>${esc(tm(m.home).short)}</span><span class="sc">${m.score[m.home]} – ${m.score[m.away]}</span><span>${esc(tm(m.away).short)}</span><img src="/api/crest/${m.away}.svg" alt=""><button class="btn ghost" data-s="${m.seed}" style="padding:2px 8px">Watch</button></div>`).join(""):'<p class="muted">First meeting this season.</p>';
+ $("prev").innerHTML=`<p class="cap">${p.matchday?`Matchday ${p.matchday} · stats from the ${p.standings_after_matchday} league matchdays played before this fixture`:`Showcase friendly · stats from the full season (${p.standings_after_matchday} matchdays)`}${!hs.season?" · season opener: no matches yet":""}</p>
+ <table><tr><th style="text-align:left;color:${h.color}">${esc(h.short)}</th><th style="text-align:center"></th><th style="color:${a.color}">${esc(a.short)}</th></tr>${cmp}</table>
+ <p class="cap" style="margin-top:4px">*Possession = share of passes. Green = better.</p>
+ <h3>Previous meetings this season</h3>${mt}
+ <h3>Pre-match odds <span class="muted" style="font-weight:400">from team ratings</span></h3><div class="probbar">${[[h.short,pr.home,h.color],["Draw",pr.draw,"#5b6577"],[a.short,pr.away,a.color]].map(([l,x,c])=>`<div style="width:${x*100}%;background:${c}">${l} ${Math.round(x*100)}%</div>`).join("")}</div>
+ <h3>Line-ups (4-3-3)</h3><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.85em">${[h,a].map(t=>`<div>${p.lineups[t.id].map(pl=>`<div><span class="muted">${pl.number}</span> ${esc(pl.name)}</div>`).join("")}</div>`).join("")}</div>`;
+ $("prev").querySelectorAll("button[data-s]").forEach(b=>b.onclick=()=>watch(b.dataset.s));}
+function watch(s){$("match").value=s;$("match").onchange();document.querySelector('.views button[data-v="live"]').click();$("teamdrawer").classList.remove("on");}
+// ------------------------------------------------------------------ league
+let LG=null,lgDay=30,selTeam=null;
+async function loadLeague(){LG=await fetch(`/api/league?day=${lgDay}`).then(r=>r.json());$("lgname").textContent=LG.name;$("lgday").max=LG.days;$("lgday").value=lgDay;$("lgdayl").textContent=`after matchday ${lgDay}`;
+ const mv=m=>m>0?`<span style="color:#3fb950">▲${m}</span>`:m<0?`<span style="color:#f07489">▼${-m}</span>`:'<span class="muted">–</span>';
+ $("ltable").innerHTML="<tr><th>#</th><th>Club</th><th></th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th><th>Form</th></tr>"+LG.table.map(r=>
+  `<tr class="trow" data-t="${r.id}" style="cursor:pointer${r.position<=1?";box-shadow:inset 3px 0 var(--acc)":r.position>=15?";box-shadow:inset 3px 0 var(--bad)":""}"><td>${r.position}</td><td><img src="${r.crest}" alt="">${esc(r.name)}</td><td>${mv(r.move)}</td><td>${r.played}</td><td>${r.won}</td><td>${r.drawn}</td><td>${r.lost}</td><td>${r.gf}</td><td>${r.ga}</td><td>${r.gd>0?"+":""}${r.gd}</td><td><b>${r.points}</b></td><td class="form">${r.form.map(f=>`<b class="${f}">${f}</b>`).join("")}</td></tr>`).join("");
+ $("ltable").querySelectorAll(".trow").forEach(tr=>{tr.onclick=()=>teamPage(tr.dataset.t);tr.onmouseenter=()=>{selTeam=tr.dataset.t;drawPos();};});
+ const lead=(k,lbl,f)=>`<div><h3>${lbl}</h3><table>${LG.leaders[k].slice(0,5).map((p,i)=>{const c=LG.clubs.find(x=>x.id===p.team);return `<tr><td>${i+1}</td><td><img src="${c.crest}" alt="">${esc(p.name)}</td><td><b>${f(p)}</b></td></tr>`;}).join("")}</table></div>`;
+ $("leaders").innerHTML=lead("goals","Top scorers",p=>p.goals)+lead("assists","Assists",p=>p.assists)+lead("xg","Expected goals (xG)",p=>p.xg)+lead("xt","Threat from passes (xT)",p=>p.xt);
+ if(!$("md").options.length){$("md").innerHTML=Array.from({length:LG.days},(_,i)=>`<option value="${i+1}">Matchday ${i+1}</option>`).join("")+'<option value="0">Showcase friendlies</option>';$("md").onchange=$("spoil").onchange=fx;$("md").value=lgDay;}
+ fx();drawPos();}
+function fx(){const d=+$("md").value,sp=$("spoil").checked;$("fixtures").innerHTML=LG.fixtures.filter(f=>f.matchday===d).map(f=>`<div class="fx"><img src="/api/crest/${f.home_id}.svg" alt=""><span style="flex:1">${esc(f.home)}</span><span class="sc">${sp&&f.score&&d<=lgDay?`${f.score[f.home_id]} – ${f.score[f.away_id]}`:"v"}</span><span style="flex:1;text-align:right">${esc(f.away)}</span><img src="/api/crest/${f.away_id}.svg" alt=""><button class="btn ghost" data-s="${f.seed}" style="padding:2px 8px">Watch</button></div>`).join("");
+ $("fixtures").querySelectorAll("button").forEach(b=>b.onclick=()=>watch(b.dataset.s));}
+function drawPos(){if(!LG)return;const c=$("poschart"),g=c.getContext("2d"),W=c.width,Hh=c.height,n=lgDay;g.clearRect(0,0,W,Hh);g.font="12px system-ui";g.fillStyle="#8d9ab0";
+ const X=d=>36+(W-50)*(d-1)/Math.max(1,LG.days-1),Y=p=>10+(Hh-30)*(p-1)/15;[1,4,8,12,16].forEach(p=>g.fillText(p,6,Y(p)+4));[1,10,20,30].forEach(d=>g.fillText("MD"+d,X(d)-12,Hh-4));
+ const order=Object.keys(LG.positions).sort(a=>a===selTeam?1:-1);order.forEach(t=>{const c2=LG.clubs.find(x=>x.id===t),on=t===selTeam;g.strokeStyle=on?c2.color:"#ffffff22";g.lineWidth=on?3:1;g.beginPath();
+  LG.positions[t].forEach((p,i)=>{i?g.lineTo(X(i+1),Y(p)):g.moveTo(X(i+1),Y(p));});g.stroke();});
+ $("poscap").textContent=selTeam?`${LG.clubs.find(x=>x.id===selTeam).name}: position after each matchday`:"Hover a club in the table to trace its season.";}
+async function teamPage(id){const t=await fetch(`/api/team/${id}?day=${lgDay}`).then(r=>r.json()),c=t.club,s=t.season,st=t.standing,pm=s.per_match,to=s.totals;selTeam=id;drawPos();
+ const name=x=>LG.clubs.find(k=>k.id===x)?.short||x;
+ $("teambody").innerHTML=`<div style="display:flex;gap:12px;align-items:center"><img src="${c.crest}" style="width:48px;height:58px" alt=""><div><h2 style="font-size:1.3em">${esc(c.name)}</h2><div class="muted">${esc(c.stadium)} · ${st.position}${["th","st","nd","rd"][st.position%10>3||[11,12,13].includes(st.position)?0:st.position%10]} after matchday ${lgDay} · ${st.points} pts · ${st.won}-${st.drawn}-${st.lost}</div></div></div>
+ <div class="kpis" style="grid-template-columns:repeat(4,1fr)">${[[to.goals_for,"goals for"],[to.goals_against,"goals against"],[to.xg_for,"xG for"],[to.xg_against,"xG against"],[pm.shots,"shots / match"],[pm.possession_pass_share_pct+"%","possession (pass share)"],[pm.pass_completion_pct+"%","pass completion"],[to.clean_sheets,"clean sheets"]].map(([b,l])=>`<div class="kpi"><b>${b}</b><span>${l}</span></div>`).join("")}</div>
+ <h3>Squad · season stats</h3><table><tr><th>Player</th><th></th><th>Apps</th><th>G</th><th>A</th><th>Shots</th><th>xG</th><th>xT</th><th>Passes</th></tr>${s.squad.map(p=>`<tr><td>${esc(p.name)}</td><td></td><td>${p.apps}</td><td><b>${p.goals}</b></td><td>${p.assists}</td><td>${p.shots}</td><td>${p.xg}</td><td>${p.xt}</td><td>${p.passes}</td></tr>`).join("")}</table>
+ <h3>Results & fixtures</h3>${t.matches.map(m=>{const home=m.home===id,o=home?m.away:m.home,res=m.score?(m.score[id]>m.score[o]?"W":m.score[id]<m.score[o]?"L":"D"):null;
+  return `<div class="fx"><span class="muted" style="min-width:42px">MD ${m.matchday}</span><span>${home?"vs":"at"}</span><img src="/api/crest/${o}.svg" alt=""><span style="flex:1">${esc(name(o))}</span>${res?`<span class="form"><b class="${res}">${res}</b></span><span class="sc">${m.score[m.home]} – ${m.score[m.away]}</span>`:'<span class="muted sc">upcoming</span>'}<button class="btn ghost" data-s="${m.seed}" style="padding:2px 8px">Watch</button></div>`;}).join("")}`;
+ $("teambody").querySelectorAll("button[data-s]").forEach(b=>b.onclick=()=>watch(b.dataset.s));$("teamdrawer").classList.add("on");}
+$("lgday").oninput=()=>{lgDay=+$("lgday").value;$("lgdayl").textContent=`after matchday ${lgDay}`;};$("lgday").onchange=()=>{$("md").value=lgDay;loadLeague();};
 pipe();kpis();sugg();requestAnimationFrame(frame);
