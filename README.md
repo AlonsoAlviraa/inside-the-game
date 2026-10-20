@@ -148,3 +148,14 @@ Live: https://ca-insidethegame.kindisland-b212215e.francecentral.azurecontainera
 * Stop: `az containerapp delete -n ca-insidethegame -g rg-insidethegame --yes`, then
   `az containerapp env delete -n cae-insidethegame -g rg-insidethegame --yes` and
   `az acr delete -n acrinsidethegamealv -g rg-insidethegame --yes`.
+
+## Broadcast UI & analyst desk (v6)
+* Hero landing, broadcast scoreboard, event timeline, animated 2D pitch (ball, pass trails, xG/xT markers), momentum chart
+  (xT + xG per 5 min), typed commentary feed with fact-check badges, live agent pipeline (latency, tokens, MCP calls),
+  cost & quality panel (cost so far, projected per match, LLM vs rules share, rejected rewrites).
+* **Ask the analyst** (`POST /api/ask`): grounded Q&A over events up to the current minute (no spoilers); every LLM
+  answer passes the numbers check, the semantic claim check and a roster check, with one repair round and a rules fallback.
+* **Full-time report** (`GET /api/report?recap=true`, `format=md` to download): grounded LLM recap + team/player stats + key moments.
+* Five selectable synthetic fixtures between six fictional clubs (`GET /api/matches`), personas Fan / Neutral / Analyst,
+  EN/ES/FR, replay speed, favourite club/player, voice (browser speechSynthesis) and large-text/high-contrast mode.
+* Screenshots: `docs/screenshots/` (`python scripts/screenshots.py <url>`).
