@@ -8,7 +8,7 @@ c = TestClient(app)
 
 def test_league_has_16_fictional_clubs_and_round_robin():
     clubs = club_list()
-    assert len(clubs) == 16 and len({x["short"] for x in clubs}) == 16
+    assert len(clubs) == 16 and LEAGUE_DAYS == 30 and len({x["short"] for x in clubs}) == 16
     seeds = league.league_seeds()
     assert len(seeds) == 8 * LEAGUE_DAYS
     for d in range(1, LEAGUE_DAYS + 1):  # every club plays once per matchday
@@ -36,7 +36,7 @@ def test_win_probability_sane_and_resolves():
 
 def test_preview_formation_crest():
     p = league.preview(1023)
-    assert len(p["head_to_head"]) == 5 and sum(p["head_to_head_record"].values()) == 5
+    assert p["meetings"] == [] and p["standings_after_matchday"] == 1
     assert all(len(v) == 11 for v in p["lineups"].values())
     f = league.formation(7)
     assert all(len(t["players"]) == 11 for t in f["teams"].values())

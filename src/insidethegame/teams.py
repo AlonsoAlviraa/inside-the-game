@@ -98,16 +98,16 @@ def make_team(key: str, offset: int) -> Team:
 
 
 def teams_for_seed(seed: int) -> tuple[Team, Team]:
-    if seed not in FIXTURES or FIXTURES[seed][:2] == ("harbour", "ridge"):
+    if seed not in FIXTURES or (seed < 1000 and FIXTURES[seed][:2] == ("harbour", "ridge")):
         return default_teams()
     h, a, _ = FIXTURES[seed]
     keys = list(_POOL)
-    return make_team(h, keys.index(h) * 5), make_team(a, keys.index(a) * 5 + 3)
+    return make_team(h, keys.index(h) * 5), make_team(a, keys.index(a) * 5)  # same squad home and away
 
 
 # ------------------------------------------------------------------ fictional league: 16 clubs, round robin
 LEAGUE_NAME = "Coastal League (fictional)"
-LEAGUE_DAYS = 6  # matchdays simulated so far
+LEAGUE_DAYS = 30  # full double round robin for 16 clubs
 
 
 def _round_robin(keys: list[str]) -> list[list[tuple[str, str]]]:
@@ -119,7 +119,9 @@ def _round_robin(keys: list[str]) -> list[list[tuple[str, str]]]:
     return rounds
 
 
-for _d, _rnd in enumerate(_round_robin(list(_POOL))[:LEAGUE_DAYS], start=1):
+_RR = _round_robin(list(_POOL))
+_RR = _RR + [[(b, a) for a, b in rnd] for rnd in _RR]  # second half of the season: reverse fixtures
+for _d, _rnd in enumerate(_RR[:LEAGUE_DAYS], start=1):
     for _k, (_h, _a) in enumerate(_rnd):
         FIXTURES[1000 + _d * 10 + _k] = (_h, _a, f"Matchday {_d} · {STADIUM[_h]}")
 

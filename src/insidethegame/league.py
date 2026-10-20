@@ -7,46 +7,24 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 
-from . import insights
+from . import insights, season
 from .generator import MatchGenerator
 from .teams import FIXTURES, LEAGUE_DAYS, _POOL, club_list, make_team, teams_for_seed
 
 FULL = 95  # nominal match length incl. stoppage, minutes
 
 
-@lru_cache(maxsize=256)
 def result(seed: int) -> dict:
-    evs = insights.events(seed)
-    meta, end = evs[0]["meta"], evs[-1]
-    return {"seed": seed, "home": meta["home"]["id"], "away": meta["away"]["id"], "score": end["score"]}
+    m = next(x for x in season.season()["matches"] if x["seed"] == seed)
+    return {"seed": seed, "home": m["home"], "away": m["away"], "score": m["score"]}
 
 
 def league_seeds(up_to_day: int = LEAGUE_DAYS) -> list[int]:
-    return sorted(s for s in FIXTURES if s >= 1000 and (s - 1000) // 10 <= up_to_day)
+    return [m["seed"] for m in season.matches(up_to_day)]
 
 
-@lru_cache(maxsize=16)
 def table(up_to_day: int = LEAGUE_DAYS) -> list[dict]:
-    rows = {c["id"]: {"id": c["id"], "name": c["name"], "short": c["short"], "color": c["color"], "crest": c["crest"],
-                      "played": 0, "won": 0, "drawn": 0, "lost": 0, "gf": 0, "ga": 0, "points": 0, "form": []}
-            for c in club_list()}
-    for s in league_seeds(up_to_day):
-        r = result(s)
-        h, a = r["home"], r["away"]
-        gh, ga = r["score"][h], r["score"][a]
-        for t, f, g in ((h, gh, ga), (a, ga, gh)):
-            row = rows[t]
-            row["played"] += 1
-            row["gf"] += f
-            row["ga"] += g
-            res = "W" if f > g else "D" if f == g else "L"
-            row[{"W": "won", "D": "drawn", "L": "lost"}[res]] += 1
-            row["points"] += {"W": 3, "D": 1, "L": 0}[res]
-            row["form"].append(res)
-    out = sorted(rows.values(), key=lambda r: (-r["points"], -(r["gf"] - r["ga"]), -r["gf"], r["name"]))
-    for i, r in enumerate(out, 1):
-        r["position"], r["gd"], r["form"] = i, r["gf"] - r["ga"], r["form"][-5:]
-    return out
+    return season.table(up_to_day)
 
 
 def _pois(k: int, lam: float) -> float:
@@ -117,47 +95,26 @@ def _elapsed(e: dict) -> int:
     return min(e["minute"], 90)
 
 
-def head_to_head(seed: int, n: int = 5) -> list[dict]:
-    """Synthetic archive: n previous meetings simulated with the same engine and squads (clearly labelled)."""
-    h, a = teams_for_seed(seed)
-    out = []
-    for i in range(n):
-        s = seed * 100 + i
-        home, away = (h, a) if i % 2 == 0 else (a, h)
-        evs = list(MatchGenerator(s, *_fresh(home.id, away.id, seed)).events())
-        out.append({"archive_seed": s, "home": home.id, "away": away.id, "score": evs[-1]["score"],
-                    "label": f"Archive meeting {i + 1}"})
-    return out
-
-
-def _fresh(hid: str, aid: str, seed: int):
-    h, a = teams_for_seed(seed)
-    by = {h.id: h, a.id: a}
-    import copy
-    return copy.deepcopy(by[hid]), copy.deepcopy(by[aid])
-
-
 def preview(seed: int) -> dict:
+    """Pre-match comparison from league matches played BEFORE this fixture, plus earlier meetings this season."""
     evs = insights.events(seed)
     meta = evs[0]["meta"]
     H, A = meta["home"]["id"], meta["away"]["id"]
-    day = (seed - 1000) // 10 if seed >= 1000 else LEAGUE_DAYS + 1
-    tbl = {r["id"]: r for r in table(max(0, day - 1))} if H in _POOL and A in _POOL else {}
+    day = season.day_of(seed) if seed >= 1000 else LEAGUE_DAYS + 1
+    before = day - 1
+    tbl = {r["id"]: r for r in season.table(before)} if before > 0 else {}
     ph, pa = priors(seed)
-    h2h = head_to_head(seed)
-    rec = {"home_wins": 0, "draws": 0, "away_wins": 0}
-    for m in h2h:
-        gh, ga = m["score"][H], m["score"][A]
-        rec["home_wins" if gh > ga else "away_wins" if ga > gh else "draws"] += 1
     h, a = teams_for_seed(seed)
-    sq = lambda t: round(sum(p.skill for p in t.players) / len(t.players), 3)
-    return {"synthetic": True, "seed": seed, "matchday": day if seed >= 1000 else None,
-            "home": {"id": H, "name": meta["home"]["name"], "rating": h.strength, "squad_skill": sq(h),
-                     "table": tbl.get(H)},
-            "away": {"id": A, "name": meta["away"]["name"], "rating": a.strength, "squad_skill": sq(a),
-                     "table": tbl.get(A)},
+
+    def side(t, team):
+        ss = season.team_season(t, before) if before > 0 else None
+        return {"id": t, "name": meta[team]["name"], "rating": (h if team == "home" else a).strength,
+                "table": tbl.get(t) if tbl and tbl[t]["played"] else None,
+                "season": {k: ss[k] for k in ("played", "totals", "per_match", "top_scorer")} if ss and ss["played"] else None}
+    return {"synthetic": True, "seed": seed, "matchday": day if seed >= 1000 else None, "standings_after_matchday": max(before, 0),
+            "home": side(H, "home"), "away": side(A, "away"),
             "expected_goals_prior": {H: ph, A: pa}, "pre_match_probability": outcome_probs(0, 0, ph * FULL / 90, pa * FULL / 90),
-            "head_to_head": h2h, "head_to_head_record": rec,
+            "meetings": season.meetings(seed),
             "lineups": {t["id"]: [{"name": p["name"], "number": p["number"], "position": p["position"]}
                                   for p in t["players"][:11]] for t in (meta["home"], meta["away"])}}
 

@@ -15,8 +15,8 @@ from .room import CARD_SCHEMA, CommentaryRoom, ViewerMemory, ViewerProfile
 FLUSH = {"goal", "period_end", "match_end"}
 from .generator import MatchGenerator, stream
 from . import analyst, insights
-from . import league
-from .teams import LEAGUE_NAME, _POOL, club_list, crest_svg, fixture_list
+from . import league, season
+from .teams import LEAGUE_DAYS, LEAGUE_NAME, _POOL, club_list, crest_svg, fixture_list
 
 WEB_DIR = Path(os.getenv("ITG_WEB_DIR", Path(__file__).resolve().parents[2] / "web"))
 app = FastAPI(title="Inside the Game - Commentary Room", version="0.1.0")
@@ -138,13 +138,29 @@ async def ask(q: Question) -> dict:
 
 
 @app.get("/api/league")
-async def league_view() -> dict:
-    """Fictional league: clubs (with generated crests), table after the simulated matchdays, fixtures/results."""
+async def league_view(day: int = Query(LEAGUE_DAYS, ge=1, le=LEAGUE_DAYS)) -> dict:
+    """Fictional league: clubs, table after `day` (with position moves), leaders, positions over time, fixtures."""
     fx = fixture_list()
     for f in fx:
         if f["seed"] >= 1000:
             f["score"] = league.result(f["seed"])["score"]
-    return {"synthetic": True, "name": LEAGUE_NAME, "clubs": club_list(), "table": league.table(), "fixtures": fx}
+    return {"synthetic": True, "name": LEAGUE_NAME, "day": day, "days": LEAGUE_DAYS, "clubs": club_list(),
+            "table": season.table_with_moves(day), "leaders": season.leaders(day),
+            "positions": season.positions_over_time(day), "fixtures": fx}
+
+
+@app.get("/api/team/{club}")
+async def team_page(club: str, day: int = Query(LEAGUE_DAYS, ge=1, le=LEAGUE_DAYS)) -> dict:
+    """Club page: season stats, squad stats, results and fixtures (league matches up to `day`)."""
+    if club not in _POOL:
+        return PlainTextResponse("unknown club", status_code=404)
+    info = next(c for c in club_list() if c["id"] == club)
+    pos = next(r for r in season.table(day) if r["id"] == club)
+    games = [{"seed": f["seed"], "matchday": f["matchday"], "home": f["home_id"], "away": f["away_id"],
+              "score": league.result(f["seed"])["score"] if f["matchday"] <= day else None}
+             for f in fixture_list() if f["seed"] >= 1000 and club in (f["home_id"], f["away_id"])]
+    return {"synthetic": True, "club": info, "standing": pos, "season": season.team_season(club, day),
+            "matches": sorted(games, key=lambda g: g["matchday"])}
 
 
 @app.get("/api/crest/{club}.svg")
