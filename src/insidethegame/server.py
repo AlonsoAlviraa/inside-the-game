@@ -28,9 +28,10 @@ async def health() -> dict:
 
 
 @app.get("/api/match")
-async def match(seed: int = 7) -> dict:
-    """Full synthetic match as JSON (for batch analysis / recaps)."""
-    return {"synthetic": True, "events": list(MatchGenerator(seed).events())}
+async def match(seed: int = 7, meta_only: bool = False) -> dict:
+    """Full synthetic match as JSON (for batch analysis / recaps); `meta_only` returns just the line-ups."""
+    evs = insights.events(seed)
+    return {"synthetic": True, "events": [evs[0]] if meta_only else list(evs)}
 
 
 @app.get("/api/stream")

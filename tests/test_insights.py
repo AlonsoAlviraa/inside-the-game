@@ -76,3 +76,18 @@ def test_api_endpoints():
     assert a["text"] and a["verified"]
     assert c.post("/api/ask", json={"seed": 42, "question": ""}).status_code == 422
     assert "analyst_desk" in c.get("/api/usage").json()
+
+
+def test_meta_only_and_ui_features():
+    j = c.get("/api/match?seed=11&meta_only=true").json()
+    assert len(j["events"]) == 1 and j["events"][0]["meta"]["home"]["name"] == "Northgate Falcons"
+    html = c.get("/").text
+    for needle in ['id="pitch"', 'id="mom"', 'id="timeline"', "/api/ask", "/api/report", "speechSynthesis",
+                   'data-v="neutral"', 'id="pipe"', "format=md"]:
+        assert needle in html
+
+
+def test_neutral_persona_stream():
+    with c.stream("GET", "/api/stream?seed=23&speed=0&mode=neutral&lang=en") as r:
+        data = [l for l in r.iter_lines() if l.startswith("data: {\"cards")]
+    assert data

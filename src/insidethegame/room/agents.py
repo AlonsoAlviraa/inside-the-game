@@ -448,6 +448,7 @@ class PersonaliseAgent:
                     "no numbers except the score, no decimals, speeds or distances, no "
                     "jargon (no xG, xT, index), at most one exclamation mark; extra excitement only when the "
                     "viewer's favourite club or player is involved. ANALYST mode: max 2 sentences, keep all numbers. "
+                    "NEUTRAL mode: max 2 plain sentences for a casual viewer, no club bias, keep numbers but name metrics in plain words. "
                     "A control index is not possession. Return EVERY card you receive, same ids. Write in the target language. Reply as JSON: {\"cards\":[{\"id\":\"...\",\"text\":\"...\"}]}")
 
     def __init__(self, state: RoomState, brain: Brain, memory: ViewerMemory):
@@ -476,7 +477,7 @@ class PersonaliseAgent:
             if p.mode == "fan":
                 c["text"] = self.fan_trim(c["text"])
             out.append(c)
-        if out and (p.mode == "fan" or p.language != "en") and self.brain.online:
+        if out and (p.mode in ("fan", "neutral") or p.language != "en") and self.brain.online:
             club = self.st.team_name(p.club) if p.club else "none"
             player = self.st.player_name(p.player) if p.player else "none"
             prompt = (f"Viewer: mode={p.mode.upper()}, language={LANGS.get(p.language, p.language)}, "

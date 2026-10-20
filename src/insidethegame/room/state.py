@@ -10,7 +10,7 @@ from pathlib import Path
 
 @dataclass
 class ViewerProfile:
-    mode: str = "fan"            # fan | analyst
+    mode: str = "fan"            # fan | analyst | neutral
     language: str = "en"         # en | es | fr
     club: str | None = None      # favourite team id
     player: str | None = None    # favourite player id
