@@ -27,7 +27,7 @@ Built for the *Inside the Game* developer hackathon. All clubs, players, crests,
 | **Azure OpenAI in Azure AI Foundry** (gpt-4.1-mini, GlobalStandard) | Explain, Interpret, Personalise agents, analyst desk, recap |
 | **Microsoft Foundry Agent Service** | The analyst desk is also hosted as Foundry agent `itg-analyst-desk` in project `insidethegame` (`scripts/foundry_agent.py`, run log in `evals/foundry_agent_run.json`) |
 | **Foundry evaluations** (`azure-ai-evaluation`) | Groundedness, Relevance and Fluency on the AI commentary (`scripts/run_evals.py`, results in `evals/`) |
-| **Azure AI Content Safety** | Every AI-written line is screened (Hate, Sexual, Violence, SelfHarm) before it is cached or shown (`room/safety.py`) |
+| **Azure AI Content Safety** | Every AI-written line in the replay cache was screened (Hate, Sexual, Violence, SelfHarm); live screening is opt-in with `ITG_CONTENT_SAFETY=1`, off in the public demo to avoid paid calls (`room/safety.py`) |
 | **Model Context Protocol** | Interpret agent calls our MCP server (`insidethegame-mcp`) over stdio |
 | **Azure Container Apps + Azure Container Registry** | Hosting (francecentral), secrets as Container Apps secrets |
 
@@ -177,7 +177,7 @@ reasons: `evals/results.json`; summary: `evals/summary.json`.
 * **Grounding:** the agents only see facts computed from the event stream; every number must exist in those facts,
   claims (who leads, who scored, minute, metric names) are checked against match state and the roster, with one repair
   round and a rules fallback. Titles are fixed, human-written strings per language.
-* **Safety:** Azure AI Content Safety screens AI lines; anything at severity 2+ is replaced by the rules line.
+* **Safety:** Azure AI Content Safety screened every cached AI line (and live lines when enabled); anything at severity 2+ is replaced by the rules line.
 * **Fairness:** fan persona is fair to both teams (enforced by checks, not only by prompt).
 * **Transparency:** AI lines carry a ✦ marker, the agent trace (tokens, latency, rejections) is visible live, and the
   UI says replay vs live. Evaluation results are published in `evals/`.
