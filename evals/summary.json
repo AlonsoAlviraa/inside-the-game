@@ -1,0 +1,56 @@
+{
+  "n": 135,
+  "judge": "gpt-4.1-mini",
+  "sdk": "azure-ai-evaluation",
+  "scale": "1-5, pass >= 3",
+  "groundedness": {
+    "mean": 4.72,
+    "pass_rate": 0.926,
+    "n": 135,
+    "by_mode": {
+      "analyst": 4.87,
+      "fan": 4.84,
+      "neutral": 4.44
+    },
+    "by_lang": {
+      "en": 4.84,
+      "es": 4.49,
+      "fr": 4.82
+    }
+  },
+  "relevance": {
+    "mean": 4.52,
+    "pass_rate": 0.993,
+    "n": 135,
+    "by_mode": {
+      "analyst": 4.78,
+      "fan": 4.58,
+      "neutral": 4.2
+    },
+    "by_lang": {
+      "en": 4.33,
+      "es": 4.58,
+      "fr": 4.64
+    }
+  },
+  "fluency": {
+    "mean": 3.29,
+    "pass_rate": 1.0,
+    "n": 135,
+    "by_mode": {
+      "analyst": 3.6,
+      "fan": 3.11,
+      "neutral": 3.16
+    },
+    "by_lang": {
+      "en": 3.24,
+      "es": 3.29,
+      "fr": 3.33
+    }
+  },
+  "content_safety": {
+    "checked": 135,
+    "max_severity": 0,
+    "flagged_severity_ge_2": 0
+  }
+}

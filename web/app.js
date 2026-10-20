@@ -4,7 +4,7 @@ const TYPEICON={goal:"⚽",chance:"🎯",shot:"🎯",card:"🟨",stat:"📊",pha
 const $=id=>document.getElementById(id),cv=$("pitch"),cx=cv.getContext("2d");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const viewer=localStorage.itgViewer||(localStorage.itgViewer="v"+Math.random().toString(36).slice(2,8));
-const opt={mode:"fan",lang:"en",speed:"20"};
+const opt={mode:"fan",lang:"en",speed:"20",src:"replay"};
 const AG=[["ingest","📥","Ingest","validates & de-duplicates"],["interpret","🧠","Interpret","xG, xT, control via MCP"],["explain","✍️","Explain","writes grounded lines"],["render","🎨","Render","builds overlay cards"],["personalise","🎯","Personalise","persona & language"]];
 const ICON={goal:"⚽",big_chance:"🎯",yellow_card:"🟨",red_card:"🟥",second_yellow_card:"🟥",threat_pass:"⚡"};
 const SUGG={en:["Who deserved to win on chances?","Who scored?","Best player so far?","Shots comparison","Any cards?"],
@@ -139,12 +139,12 @@ function caption(ev,title,text,k){const m=/^(\S+)\s+(.*)$/.exec(title),ic=m&&!/[
  $("feed").prepend(li);S.items.set("ev"+ev.id,li);if(k>=4&&ev.type!=="goal")say(text);S.cards++;return li;}
 function feedItem(min,ic,ti,text,k,ai){$("feed").querySelector(".empty")?.remove();const li=document.createElement("li");li.className="k"+k;
  li.innerHTML=`<span class="mn">${min}'</span><span class="ic">${ic}</span><div><div class="ti"><span class="tt">${esc(ti)}</span><span class="ai" title="Written by the AI room and fact-checked">${ai?"✦":""}</span><button class="sv" title="Save as image">⬇</button></div><div class="tx">${esc(text)}</div></div>`;return li;}
-function upgrade(c){const li=S.items.get(c.id);if(!li)return addCardItem(c);const tx=li.querySelector(".tx");tx.textContent=c.text;tx.classList.remove("up");void tx.offsetWidth;tx.classList.add("up");
+function upgrade(c){const li=S.items.get(c.id);if(!li)return addCardItem(c);if(c.fav)li.classList.add("fav");const tx=li.querySelector(".tx");tx.textContent=c.text;tx.classList.remove("up");void tx.offsetWidth;tx.classList.add("up");
  li.querySelector(".tt").textContent=c.title;const ai=String(c.source).includes("llm");if(ai){li.querySelector(".ai").textContent="✦";S.llm++;}}
 function addCardItem(c){const llm=String(c.source).includes("llm");if(llm)S.llm++;S.cards++;
- const li=feedItem(c.minute,TYPEICON[c.type]||"•",c.title,c.text,Math.min(c.priority,4),llm);li.onclick=e=>{if(e.target.closest("button"))return shareItem(li);if(c.viz)showViz(c.viz,c.minute);};
+ const li=feedItem(c.minute,TYPEICON[c.type]||"•",c.title.replace(/^★ /,""),c.text,Math.min(c.priority,4),llm);if(c.fav)li.classList.add("fav");li.onclick=e=>{if(e.target.closest("button"))return shareItem(li);if(c.viz)showViz(c.viz,c.minute);};
  const feed=$("feed"),after=[...feed.children].find(x=>+(x.querySelector(".mn")?.textContent.replace("'",""))<=c.minute);feed.insertBefore(li,after||null);}
-function onCards(d){S.batches++;d.cards.forEach(c=>{const m=/^ev(\d+)$/.exec(c.id);
+function onCards(d){S.batches++;if(d.replay)S.replay=true;d.cards.forEach(c=>{const m=/^ev(\d+)$/.exec(c.id);
   if(m){if(S.applied.has(+m[1])||S.items.has(c.id)){if(S.items.has(c.id))upgrade(c);else addCardItem(c);}else S.pending.set(c.id,c);}
   else if(elapsedMin(c.facts?.period||1,c.minute)<=S.elapsed&&(c.facts?.period||1)<=S.period)addCardItem(c);else S.pendMin.push(c);});
  d.trace.forEach(t=>{S.lat+=t.ms||0;if(Array.isArray(t.factcheck_rejected))S.rejected+=t.factcheck_rejected.length;});
@@ -175,7 +175,7 @@ function traceLog(d){const r=d.report||{},div=document.createElement("div");div.
  $("trace").prepend(div);while($("trace").children.length>40)$("trace").lastChild.remove();}
 function kpis(){const u=S.usage||{calls:0,input_tokens:0,output_tokens:0,usd:0};const proj=S.elapsed?u.usd/S.elapsed*90:0;
  $("kpis").innerHTML=[[`$${(+u.usd).toFixed(4)}`,"LLM cost so far"],[`$${proj.toFixed(3)}`,"projected for the match"],[u.calls,"LLM calls"],[(u.input_tokens+u.output_tokens).toLocaleString(),"tokens used"],
- [S.cards,"commentary lines"],[S.llm,"upgraded by AI"],[S.rejected,"AI rewrites rejected by checks"],[S.batches?Math.round(S.lat/S.batches)+" ms":"–","AI room latency per batch"]].map(([b,s])=>`<div class="kpi"><b>${b}</b><span>${s}</span></div>`).join("");}
+ [S.cards,"commentary lines"],[S.llm,"upgraded by AI"],[S.rejected,"AI rewrites rejected by checks"],[S.batches?Math.round(S.lat/S.batches)+" ms":"–","AI room latency per batch"]].map(([b,s])=>`<div class="kpi"><b>${b}</b><span>${s}</span></div>`).join("")+(S.replay?`<div class="kpi"><b>0</b><span>live LLM calls now (replay of precomputed, checked AI commentary)</span></div>`:"");}
 // ------------------------------------------------------------------ data panels
 function refresh(force){if(!meta)return;S.lastRep=S.elapsed;const m=S.running?Math.max(0,S.period===1?Math.min(S.clockMin,45):S.clockMin):200;
  fetch(`/api/formation?seed=${seed}&minute=${S.running?Math.max(m,10):200}`).then(r=>r.json()).then(f=>{S.dots=[];Object.entries(f.teams).forEach(([tid,t])=>t.players.forEach(p=>{const[x,y]=p.avg||p.slot;S.dots.push({id:p.id,team:tid,x,y,n:p.number});}));});
@@ -229,13 +229,14 @@ $("askf").onsubmit=e=>{e.preventDefault();ask();};
 // ------------------------------------------------------------------ match lifecycle
 function setMeta(m){meta=m;[m.home,m.away].forEach(t=>t.players.forEach(p=>NUMS[p.id]=p.number));const h=m.home,a=m.away;$("hn").textContent=h.name;$("an").textContent=a.name;$("hc").src=crest(h.id);$("ac").src=crest(a.id);
  document.documentElement.style.setProperty("--home",h.color);document.documentElement.style.setProperty("--away",a.color);
- const cl=$("club");cl.length=1;loadPreview;[h,a].forEach(t=>cl.add(new Option(t.name,t.id)));}
+ const cl=$("club");cl.length=1;loadPreview;[h,a].forEach(t=>cl.add(new Option(t.name,t.id)));
+ const fp=$("fplayer");fp.length=1;[h,a].forEach(t=>t.players.forEach(p=>fp.add(new Option(`${p.name} (${t.short})`,p.id))));}
 function resetUI(){$("feed").innerHTML='<li class="empty">Commentary starts at kick-off.</li>';$("trace").innerHTML="";$("timeline").querySelectorAll(".tl").forEach(x=>x.remove());
  $("prog").style.width="0";$("head").style.left="0";$("score").textContent="0 – 0";$("clock").textContent="0'";$("period").textContent="Pre-match";$("live").hidden=true;pipe();kpis();}
 async function loadMatch(){if(es)es.close();S=fresh();resetUI();const j=await fetch(`/api/match?seed=${seed}&meta_only=true`).then(r=>r.json());setMeta(j.events[0].meta);
  S.score={[meta.home.id]:0,[meta.away.id]:0};loadPreview();refresh();$("nowt").textContent=`${meta.home.name} v ${meta.away.name} at ${j.events[0].meta.venue}. Press Kick off to start.`;}
 function kick(){if(es)es.close();const keep=meta;S=fresh();resetUI();S.score={[keep.home.id]:0,[keep.away.id]:0};S.running=true;$("live").hidden=false;$("go").textContent="↻ Restart";$("pause").disabled=false;$("pause").textContent="⏸ Pause";
- tab("feed");$("buffer").classList.add("on");const q=new URLSearchParams({seed,speed:+opt.speed*1.6,batch_s:150,mode:opt.mode,lang:opt.lang,club:$("club").value,viewer});
+ tab("feed");$("buffer").classList.add("on");const q=new URLSearchParams({seed,speed:+opt.speed*1.6,batch_s:150,mode:opt.mode,lang:opt.lang,club:$("club").value,player:$("fplayer").value,replay:opt.src==="replay"?"true":"false",viewer});
  es=new EventSource("/api/stream?"+q);
  es.addEventListener("tick",m=>{const ev=JSON.parse(m.data).event;S.buf.push(ev);S.lastRecv=ev.t;if(ev.type==="match_end")S.ended=true;});
  es.addEventListener("cards",m=>onCards(JSON.parse(m.data)));

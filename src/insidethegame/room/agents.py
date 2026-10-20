@@ -6,7 +6,7 @@ import json
 from .. import xt
 from ..metrics import ControlChaosIndex
 from ..spadl import to_spadl
-from . import factcheck, semantic
+from . import factcheck, localise, safety, semantic
 from .llm import Brain, parse_json
 from .state import Batch, RoomState, ViewerMemory, validate_card
 
@@ -446,8 +446,9 @@ class PersonaliseAgent:
                     "exactly as written and never add facts or numbers that are not in the card. "
                     "FAN mode: one punchy sentence (max 20 words) a supporter would say; keep the scorer's name on goals; "
                     "no numbers except the score, no decimals, speeds or distances, no "
-                    "jargon (no xG, xT, index), at most one exclamation mark; extra excitement only when the "
-                    "viewer's favourite club or player is involved. ANALYST mode: max 2 sentences, keep all numbers. "
+                    "jargon (no xG, xT, index), at most one exclamation mark. Be warm but fair: credit good play by EITHER team, "
+                    "never mock, insult or belittle the opponent or the referee, no 'we/us/our'. Add a little extra warmth only when "
+                    "the viewer's favourite club or player is involved, and name the favourite player when they are in the card. ANALYST mode: max 2 sentences, keep all numbers. "
                     "NEUTRAL mode: max 2 plain sentences for a casual viewer, no club bias, keep numbers but name metrics in plain words. "
                     "A control index is not possession. Return EVERY card you receive, same ids. Write in the target language. Reply as JSON: {\"cards\":[{\"id\":\"...\",\"text\":\"...\"}]}")
 
@@ -469,8 +470,11 @@ class PersonaliseAgent:
             if p.club and c.get("team") == p.club:
                 c["priority"] = min(5, c["priority"] + 1)
             c["title"] = card_title(c, p.language)
+            if p.club and c.get("team") == p.club:
+                c["fav"] = "club"
             if p.player and c.get("player_id") == p.player:
                 c["priority"] = 5
+                c["fav"] = "player"
                 c["title"] = ("★ " + c["title"])[:60]
             if p.mode == "fan" and c["type"] == "stat" and c["priority"] < 4:
                 continue  # fans skip routine metric cards
@@ -522,10 +526,24 @@ class PersonaliseAgent:
                     continue
                 c["text"] = r["text"][:400]  # title stays the fixed per-language one
                 c["source"] += "+personalised"
+            if safety.enabled():  # Azure AI Content Safety on every AI-rewritten line
+                ai = [c for c in out if "+personalised" in c["source"]]
+                res = await safety.analyze([c["text"] for c in ai]) if ai else []
+                for c, r in zip(ai, res):
+                    c["safety"] = r
+                    if not safety.safe(r):
+                        c["source"] = c["source"].replace("+personalised", "")
+                        c["text"] = localise.rule_text(c, "en") or c["text"]
+                        rejected.append({"id": c["id"], "issues": ["content safety"], "text": None})
             if entry is not None:
                 entry["factcheck_rejected"] = rejected
         for c in out:
-            c["lang"] = p.language if "+personalised" in c["source"] or p.language == "en" else "en"
+            if "+personalised" not in c["source"] and (p.language != "en" or p.mode == "fan"):
+                t = localise.rule_text(c, p.language)  # never fall back to English when another language is chosen
+                if t:
+                    c["text"], c["source"] = t[:400], c["source"] + "+localised"
+            c["lang"] = p.language if ("+personalised" in c["source"] or "+localised" in c["source"]
+                                       or p.language == "en") else "en"
             assert not validate_card(c)
         self.memory.record_cards(p.viewer_id, out)
         b.cards = out

@@ -79,9 +79,9 @@ def test_fan_mode_strips_metrics_and_boosts_favourites():
     assert all(c["priority"] == 5 and c["title"].startswith("★") for c in fan if c["player_id"] == gp)
 
 
-def test_non_english_offline_falls_back_to_clean_english():
+def test_non_english_offline_stays_in_chosen_language():
     _, cards, _ = play(ViewerProfile(mode="analyst", language="es"))
-    assert all(c["lang"] == "en" for c in cards)
+    assert cards and all(c["lang"] == "es" for c in cards)
 
 
 def test_viewer_memory_persists(tmp_path):

@@ -10,12 +10,13 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response, Streami
 from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
 
+from .room import localise
 from .room import CARD_SCHEMA, CommentaryRoom, ViewerMemory, ViewerProfile
 
 FLUSH = {"goal", "period_end", "match_end"}
 from .generator import MatchGenerator, stream
 from . import analyst, insights
-from . import league, season
+from . import league, season, replay
 from .teams import LEAGUE_DAYS, LEAGUE_NAME, _POOL, club_list, crest_svg, fixture_list
 
 WEB_DIR = Path(os.getenv("ITG_WEB_DIR", Path(__file__).resolve().parents[2] / "web"))
@@ -38,10 +39,14 @@ async def match(seed: int = 7, meta_only: bool = False) -> dict:
 @app.get("/api/stream")
 async def sse(seed: int = 7, speed: float = Query(60.0, ge=0, le=5000), mode: str = "fan",
               lang: str = "en", club: str | None = None, player: str | None = None, viewer: str = "anonymous",
-              batch_s: float = Query(float(os.getenv("ITG_BATCH_S", "300")), ge=30, le=900)):
+              batch_s: float = Query(float(os.getenv("ITG_BATCH_S", "300")), ge=30, le=900), replay_mode: bool = Query(False, alias="replay")):
     """SSE: `tick` per raw event (pitch/score), `cards` per agent batch (overlay cards + agent trace + usage).
     Events are batched per `batch_s` match-seconds (flushed early on goals and period ends) so the room makes
     a handful of LLM calls per batch and stays under the deployment's tokens-per-minute quota."""
+    cached = replay.load(seed, mode, lang) if replay_mode else None
+    if cached:
+        return StreamingResponse(_replay_gen(cached, seed, speed, club or None, player or None), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     memory = ViewerMemory()
     profile = memory.fill_defaults(ViewerProfile(mode=mode, language=lang, club=club or None,
                                                  player=player or None, viewer_id=viewer))
@@ -66,7 +71,7 @@ async def sse(seed: int = 7, speed: float = Query(60.0, ge=0, le=5000), mode: st
                         break
                     batch = batch + nxt
                 b = await room.process_batch(batch, profile)
-                await q_out.put({"cards": b.cards, "trace": b.trace, "report": b.report, "index": room.state.index,
+                await q_out.put({"cards": localise.ensure(b.cards, profile.language, profile.mode), "trace": b.trace, "report": b.report, "index": room.state.index,
                                  "phase": room.state.phase, "score": room.state.score, "minute": room.state.minute,
                                  "usage": room.ledger.totals(), "orchestrator": room.orchestrator})
             await q_out.put(None)
@@ -103,6 +108,25 @@ async def sse(seed: int = 7, speed: float = Query(60.0, ge=0, le=5000), mode: st
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+async def _replay_gen(cached: dict, seed: int, speed: float, club: str | None, player: str | None):
+    """Replay: same event clock as live, cached AI batches released right after the event that closed them."""
+    by_ev = {b["after_event"]: b["payload"] for b in cached["batches"]}
+    score: dict = {}
+    async for ev in stream(seed, speed):
+        if ev["type"] == "goal" and ev.get("score"):
+            score = ev["score"]
+        yield f"event: tick\ndata: {json.dumps({'event': ev, 'score': score or None, 'index': None})}\n\n"
+        if ev["id"] in by_ev:
+            yield f"event: cards\ndata: {json.dumps(replay.personalise(by_ev[ev['id']], club, player), default=str)}\n\n"
+    yield "event: end\ndata: {}\n\n"
+
+
+@app.get("/api/replay")
+async def replay_index() -> dict:
+    """Which (match, persona, language) combinations have precomputed AI commentary."""
+    return {"showcase": list(replay.SHOWCASE), "available": replay.available()}
 
 
 @app.get("/api/matches")

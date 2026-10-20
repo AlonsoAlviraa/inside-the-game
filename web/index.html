@@ -18,7 +18,7 @@ select{background:var(--p2);color:var(--txt);border:1px solid var(--line);border
 .icon{background:none;border:1px solid transparent;border-radius:7px;padding:4px 7px;color:var(--mute)}.icon.on{color:var(--acc);border-color:var(--line)}
 /* top bar */
 nav{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--p);flex-wrap:nowrap;white-space:nowrap}
-nav select{min-width:0;flex:0 1 auto}
+nav select{min-width:86px;flex:0 1 auto}
 @media(max-width:1400px){.views button{padding:4px 6px}.seg button{padding:3px 6px}}
 .logo{font-weight:800;letter-spacing:-.01em;margin-right:6px}.logo b{color:var(--acc)}
 .views button{background:none;border:0;color:var(--mute);padding:4px 9px;border-radius:6px;font-weight:600}.views button.on{color:var(--txt);background:var(--p2)}
@@ -100,6 +100,9 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
 @media(max-width:1000px){#v-live{grid-template-columns:1fr;overflow:auto}.right{min-height:420px}#v-league,#v-about{grid-template-columns:1fr}.mini{display:none}}
 @media print{nav,#bar,.view{display:none!important}#ft{position:static;display:block;background:none}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+#feed li.fav{border-left:3px solid #f5c542;background:linear-gradient(90deg,#f5c54222,transparent 60%)}
+#feed li.fav .tt::before{content:"★ ";color:#f5c542}
+#following{font-size:.8em;color:#f5c542;white-space:nowrap}
 </style></head><body>
 <nav><span class="logo">Inside<b>the</b>Game</span>
  <span class="views"><button class="on" data-v="live">Live</button><button data-v="league">League</button><button data-v="about">About</button></span>
@@ -108,6 +111,8 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
  <span class="seg" id="lang" title="Language"><button data-v="en" class="on">EN</button><button data-v="es">ES</button><button data-v="fr">FR</button></span>
  <span class="seg" id="speed" title="Replay speed"><button data-v="10">0.5×</button><button data-v="20" class="on">1×</button><button data-v="40">2×</button></span>
  <select id="club" aria-label="Your team" style="max-width:120px"><option value="">My team</option></select>
+ <select id="fplayer" aria-label="Favourite player" style="max-width:130px"><option value="">★ Player</option></select>
+ <span class="seg" id="src" title="Replay: precomputed AI commentary (no live model calls). Live: the agents run now on Azure OpenAI."><button data-v="replay" class="on">Replay</button><button data-v="live">Live</button></span>
  <span class="sp"></span>
  <button class="icon" id="snd" title="Goal sound">🔈</button><button class="icon" id="tts" title="Read key moments aloud">🗣</button><button class="icon" id="ntf" title="Browser alerts">🔔</button><button class="icon" id="big" title="Larger text">Aa</button>
  <button class="btn ghost" id="pause" disabled>⏸</button><button class="btn" id="go">▶ Kick off</button></nav>

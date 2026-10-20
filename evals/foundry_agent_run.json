@@ -1,0 +1,54 @@
+{
+  "agent_id": "asst_DIj1DCiuCwi9PufKWRpvmLvp",
+  "agent_name": "itg-analyst-desk",
+  "model": "gpt-4.1-mini",
+  "project_endpoint": "https://ais-insidethegame-alv.services.ai.azure.com/api/projects/insidethegame",
+  "seed": 42,
+  "runs": [
+    {
+      "question": "Who deserved to win on chances?",
+      "status": "completed",
+      "answer": "Harbour City Mariners had a higher xG of 1.32 compared to Quarrytown United's 0.37, indicating they created better quality chances. Despite this, the match ended in a 1-1 draw. Therefore, based on chances alone, Harbour City Mariners deserved to win.",
+      "usage": {
+        "prompt_tokens": 1280,
+        "completion_tokens": 62,
+        "total_tokens": 1342,
+        "prompt_token_details": {
+          "cached_tokens": 0
+        }
+      },
+      "error": null,
+      "verifier_issues": []
+    },
+    {
+      "question": "Who was the best player?",
+      "status": "completed",
+      "answer": "The best player was Gael Greywick from Harbour City Mariners with an impact score of 2.19. He scored 1 goal, had 4 shots with an xG of 0.98, and contributed an xT of 0.209 with a pass completion rate of 86.2%.",
+      "usage": {
+        "prompt_tokens": 1279,
+        "completion_tokens": 65,
+        "total_tokens": 1344,
+        "prompt_token_details": {
+          "cached_tokens": 0
+        }
+      },
+      "error": null,
+      "verifier_issues": []
+    },
+    {
+      "question": "Compare the shots of both teams.",
+      "status": "completed",
+      "answer": "Quarrytown United had 13 shots with 8 on target, while Harbour City Mariners had 15 shots with 4 on target. Despite having fewer shots, Quarrytown United had more shots on target than Harbour City Mariners.",
+      "usage": {
+        "prompt_tokens": 1280,
+        "completion_tokens": 48,
+        "total_tokens": 1328,
+        "prompt_token_details": {
+          "cached_tokens": 0
+        }
+      },
+      "error": null,
+      "verifier_issues": []
+    }
+  ]
+}
