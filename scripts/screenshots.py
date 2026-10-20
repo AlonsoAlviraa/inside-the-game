@@ -33,11 +33,11 @@ with sync_playwright() as p:
             if pg.is_visible("#goal.on"):
                 st = pg.evaluate("""()=>({banner:document.getElementById('gscore').textContent,scorer:document.getElementById('gscorer').textContent,
                     board:document.getElementById('score').textContent,clock:document.getElementById('clock').textContent,
-                    feedTop:document.querySelector('#feed li .ti').textContent,marks:document.querySelectorAll('.tl').length})""")
+                    feedTop:document.querySelector('#feed li .tt').textContent,marks:document.querySelectorAll('.tl').length})""")
                 if not seen or seen[-1]["banner"] != st["banner"]:
                     seen.append(st)
                     if len(seen) == 1:
-                        shot(pg, "1920-goal-moment")
+                        shot(pg, "v8-1920-goal-moment")
                 time.sleep(0.2)
             else:
                 time.sleep(0.25)
@@ -50,37 +50,28 @@ with sync_playwright() as p:
             print("goal", g["minute"], g["player"], exp_board, "->", s, "OK" if good else "MISMATCH")
         print("WATCH RESULT", "PASS" if ok else "FAIL", f"{len(seen)}/{len(goals)} goals", "errors:", errs)
         time.sleep(3)
-        shot(pg, "1920-full-time-report")
+        shot(pg, "v8-1920-full-time-report")
         pg.close()
     for w, h in ((1280, 800), (1920, 1080)):
         pg = b.new_page(viewport={"width": w, "height": h})
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.goto(base, wait_until="networkidle")
         time.sleep(2)
-        shot(pg, f"{w}-01-landing")
         pg.click('#speed button[data-v="40"]')
         pg.click("#go")
         time.sleep(40)
-        pg.evaluate("window.scrollTo(0, document.querySelector('.controls').offsetTop-70)")
-        time.sleep(1)
-        shot(pg, f"{w}-02-match-centre")
-        for t in ("win", "mom", "stats", "tactics", "compare", "agents", "ask"):
+        shot(pg, f"v8-{w}-live")
+        print(w, "fits one screen:", pg.evaluate("document.documentElement.scrollHeight<=innerHeight"))
+        for t in ("stats", "win", "tactics", "compare", "preview", "ask", "agents"):
             pg.click(f'#tabs button[data-p="{t}"]')
             if t == "ask":
                 pg.click("#sugg button")
                 pg.wait_for_selector("#chat .msg small", timeout=90000)
-            time.sleep(2)
-            pg.evaluate("document.getElementById('tabs').scrollIntoView()")
-            time.sleep(0.5)
-            shot(pg, f"{w}-03-{t}")
-        pg.click('#tabs button[data-p="preview"]')
-        time.sleep(1)
-        pg.evaluate("document.getElementById('tabs').scrollIntoView()")
-        shot(pg, f"{w}-03-preview")
-        pg.click('nav .views button[data-v="league"]')
-        time.sleep(3)
-        pg.evaluate("window.scrollTo(0, document.querySelector('main').offsetTop-70)")
-        shot(pg, f"{w}-04-league")
+            time.sleep(1.5)
+            shot(pg, f"v8-{w}-{t}")
+        pg.click('.views button[data-v="league"]')
+        time.sleep(2)
+        shot(pg, f"v8-{w}-league")
         pg.close()
     print("page errors:", errs)
     b.close()
