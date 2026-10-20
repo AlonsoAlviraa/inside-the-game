@@ -115,7 +115,7 @@ th:first-child,td:first-child{text-align:left}th{color:var(--mute);font-weight:6
 #ft{position:fixed;inset:0;background:#000b;display:none;place-items:center;z-index:50;padding:20px}#ft.on{display:grid}
 #ft .box{background:var(--panel);border:1px solid var(--line);border-radius:18px;max-width:820px;width:100%;max-height:90vh;overflow:auto;padding:24px;animation:slide .4s}
 footer{color:var(--mute);font-size:.8em;text-align:center;padding:24px}
-@media(max-width:1000px){.grid,.row2{grid-template-columns:1fr}.pane{height:auto;max-height:70vh}.pipe{grid-template-columns:repeat(3,1fr)}#overlay{position:static;width:100%;margin-top:8px}}
+@media(max-width:1000px){.grid,.row2{grid-template-columns:minmax(0,1fr)}.bar{position:static}.score{font-size:2em;white-space:nowrap}.team{font-size:.95em}#board{padding:12px;gap:8px}.pane{height:auto;max-height:70vh}.pipe{grid-template-columns:repeat(3,1fr)}#overlay{position:static;width:100%;margin-top:8px}}
 @media print{#hero,.bar,.grid,.row2,#timeline,#board,footer{display:none!important}#ft{position:static;display:block;background:none}#ft .box{border:0;max-height:none}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head><body>
