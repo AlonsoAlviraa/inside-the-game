@@ -321,16 +321,16 @@ function kick(){if(es)es.close();reset();seed=+$("match").value;running=true;$("
  const q=new URLSearchParams({seed,speed:opt.speed,mode:opt.mode,lang:opt.lang,club:$("club").value,player:$("player").value,viewer});
  es=new EventSource("/api/stream?"+q);clearInterval(repTimer);repTimer=setInterval(()=>running&&loadReport(),6000);
  es.addEventListener("tick",m=>{const d=JSON.parse(m.data),ev=d.event;minute=ev.minute;lastT=ev.t;$("clock").textContent=ev.minute+"'";$("prog").style.width=tlPos(ev.t)+"%";
-  if(ev.type==="match_start")setMeta(ev.meta);
+  if(ev.type==="match_start"||ev.type==="period_start"||ev.type==="period_end"){if(ev.type==="match_start")setMeta(ev.meta);ball.x=ball.tx=52.5;ball.y=ball.ty=34;ball.fx=52.5;ball.fy=34;}
   if(ev.type==="pass"&&meta){const ms=ev.duration_s*1000/(+opt.speed)*60/60;moveBall(ev.team,ev.end_x,ev.end_y,Math.min(900,ms));
    trail.push({a:P(ev.team,ev.x,ev.y),b:P(ev.team,ev.end_x,ev.end_y),c:col(ev.team),ok:ev.success});if(trail.length>10)trail.shift();}
   if(ev.type==="shot"){moveBall(ev.team,105,34+(ev.y-34)*.3,300);if(ev.xg>=.2)tlMark(ev,"🎯",`chance ${ev.player}`);}
-  if(ev.type==="goal"){setScore(ev.score);goalFlash=performance.now()+2500;$("board").classList.remove("flash");void $("board").offsetWidth;$("board").classList.add("flash");tlMark(ev,"⚽",`goal ${ev.player}`);loadReport();}
+  if(ev.type==="goal"){setScore(ev.score);goalFlash=performance.now()+2500;$("board").classList.remove("flash");void $("board").offsetWidth;$("board").classList.add("flash");tlMark(ev,"⚽",`goal ${ev.player}`);moveBall(ev.team,52.5,34,900);loadReport();}
   if(ev.type==="card")tlMark(ev,ev.card==="yellow"?"🟨":"🟥",`${ev.card} ${ev.player}`);
   if(ev.type==="substitution")tlMark({...ev,x:52,y:34},"🔁",`${ev.player_on} on`);
   if(ev.type==="period_end"&&ev.period===1)$("phase").textContent="half-time";
   if(ev.type==="match_end"){running=false;$("live").hidden=true;$("phase").textContent="full time";}});
- es.addEventListener("cards",m=>{const d=JSON.parse(m.data);d.cards.slice().reverse().forEach(showCard);showTrace(d);setScore(d.score);
+ es.addEventListener("cards",m=>{const d=JSON.parse(m.data);d.cards.slice().reverse().forEach(showCard);showTrace(d);
   if(d.index&&d.index.control&&meta){const h=d.index.control[meta.home.id],a=d.index.control[meta.away.id];$("ctrl").style.width=(100*h/((h+a)||1))+"%";$("chaos").textContent=d.index.chaos;}
   if(running)$("phase").textContent=d.phase;});
  es.addEventListener("end",()=>{es.close();running=false;clearInterval(repTimer);$("live").hidden=true;fullTime();});
