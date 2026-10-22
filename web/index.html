@@ -19,7 +19,7 @@ select{background:var(--p2);color:var(--txt);border:1px solid var(--line);border
 /* top bar */
 nav{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--p);flex-wrap:nowrap;white-space:nowrap}
 nav select{min-width:86px;flex:0 1 auto}
-@media(max-width:1400px){.views button{padding:4px 6px}.seg button{padding:3px 6px}nav{gap:4px;padding:6px 6px}nav select{min-width:0;flex:0 0 auto}#match{width:146px;max-width:146px!important}#club,#fplayer{width:92px;max-width:92px!important}nav .icon{padding:2px 2px}.logo{font-size:.9em}.bl{display:none}.btn{padding:6px 10px}}
+@media(max-width:1400px){.views button{padding:4px 6px}.seg button{padding:3px 6px}nav{gap:4px;padding:6px 6px}nav select{min-width:0;flex:0 0 auto}#match{width:118px;max-width:118px!important}#club,#fplayer{width:78px;max-width:78px!important}.views button{padding:4px 4px}nav .seg button{padding:3px 4px}nav .icon{padding:2px 1px}nav .icon{padding:2px 2px}.logo{font-size:.9em}.bl{display:none}.btn{padding:6px 10px}}
 html,body{overflow-x:hidden}
 #feed li.empty{display:block;grid-column:1/-1;text-align:center}
 .logo{font-weight:800;letter-spacing:-.01em;margin-right:6px}.logo b{color:var(--acc)}
@@ -109,6 +109,23 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 #feed li.fav{border-left:3px solid #f5c542;background:linear-gradient(90deg,#f5c54222,transparent 60%)}
 #feed li.fav .tt::before{content:"★ ";color:#f5c542}
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+#nowt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#now .btn{padding:4px 10px;font-size:.88em;white-space:nowrap}
+#reelui{position:absolute;top:10px;right:10px;display:flex;gap:6px;align-items:center;background:#0a0e16d8;border:1px solid var(--line);border-radius:8px;padding:4px 6px;font-size:.85em}#reelui[hidden]{display:none}#reelui button{background:var(--p2);border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+#pv,#help{position:fixed;inset:0;background:#000b;display:none;place-items:center;z-index:65;padding:16px}#pv.on,#help.on{display:grid}
+#pv .box,#help .box{background:var(--p);border:1px solid var(--line);border-radius:12px;max-width:1100px;width:100%;max-height:90vh;overflow:auto;padding:18px}#help .box{max-width:520px}
+.pvg{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.pvc{background:var(--p2);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:6px}.pvc.me{border-color:var(--acc)}
+.pvc p{margin:0;font-size:1.02em}.pvt{font-weight:800;color:var(--gold)}.pvtr{display:flex;flex-wrap:wrap;gap:4px}
+.chip{display:inline-block;background:var(--p2);border:1px solid var(--line);border-radius:99px;padding:1px 8px;font-size:.78em}.chip.ok{border-color:var(--acc);color:var(--acc)}
+.trace{margin-top:6px;font-size:.82em}.trace summary{cursor:pointer;color:var(--acc)}.tc{border-left:2px solid var(--acc);padding:3px 0 3px 8px;margin:5px 0}.tc pre{white-space:pre-wrap;word-break:break-all;font-size:.85em;color:var(--mute);margin:3px 0 0;max-height:110px;overflow:auto}
+#tourhl{position:fixed;display:none;z-index:80;border:3px solid var(--gold);border-radius:10px;box-shadow:0 0 0 9999px #0007;pointer-events:none;transition:all .25s}
+#tourtip{position:fixed;display:none;z-index:81;background:var(--p);border:1px solid var(--gold);border-radius:10px;padding:12px;box-shadow:0 10px 30px #000a}#tourtip p{margin:6px 0 10px;color:var(--txt)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+kbd{background:var(--p2);border:1px solid var(--line);border-radius:4px;padding:0 5px;font:inherit;font-size:.85em}
+body.cvd .form .W{background:#0072B2;color:#fff}body.cvd .form .L{background:#E69F00}
+nav{overflow-x:auto;scrollbar-width:none}
+@media(max-width:1000px){#v-live{grid-template-columns:minmax(0,1fr)}#now{flex-wrap:wrap}#nowt{flex-basis:100%;white-space:normal}#pitchbox{flex:none}canvas#pitch{width:100%;height:auto}.left{display:block}.left>*{margin-bottom:8px}#now{height:auto}#v-live.view.on{display:block}.right{margin-top:10px;height:70vh}}
+@media(max-width:700px){.pvg{grid-template-columns:1fr}#now .tb{display:none}nav{overflow-x:auto}}
 #following{font-size:.8em;color:#f5c542;white-space:nowrap}
 </style></head><body>
 <nav><span class="logo">Inside<b>the</b>Game</span>
@@ -121,7 +138,7 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
  <select id="fplayer" aria-label="Favourite player" style="max-width:130px"><option value="">★ Player</option></select>
  <span class="seg" id="src" title="Replay: precomputed AI commentary (no live model calls). Live: the agents run now on Azure OpenAI."><button data-v="replay" class="on">Replay</button><button data-v="live">Live</button></span>
  <span class="sp"></span>
- <button class="icon" id="snd" title="Goal sound">🔈</button><button class="icon" id="tts" title="Read key moments aloud">🗣</button><button class="icon" id="ntf" title="Browser alerts">🔔</button><button class="icon" id="big" title="Larger text">Aa</button>
+ <button class="icon" id="snd" title="Goal sound">🔈</button><button class="icon" id="tts" title="Read key moments aloud">🗣</button><button class="icon" id="ntf" title="Browser alerts">🔔</button><button class="icon" id="big" title="Larger text">Aa</button><button class="icon" id="cvd" title="Colour-blind-safe palette (C)" aria-label="Colour-blind-safe palette">◐</button>
  <button class="btn ghost" id="pause" title="Pause / resume" disabled>⏸</button><button class="btn" id="go" title="Kick off / restart">▶ Kick off</button></nav>
 
 <div id="netbar" role="status" hidden style="background:#7a4b00;color:#fff;padding:4px 12px;font-size:.85em;text-align:center"></div>
@@ -135,8 +152,9 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
 
 <div class="view on" id="v-live">
  <div class="left">
-  <div id="now"><span class="dot"></span><span id="nowt">Pick a match and press Kick off.</span></div>
-  <div id="pitchbox"><canvas id="pitch" width="1050" height="680" aria-label="Live pitch"></canvas>
+  <div id="now"><span class="dot"></span><span id="nowt" aria-live="polite">Pick a match and press Kick off.</span><button class="btn" id="best" title="Goals and big chances, replayed on the pitch with AI captions (B)">✨ Best moments</button><button class="btn ghost" id="pvbtn" title="Same moment written for fan, neutral and analyst (V)">👥 3 viewers</button><button class="btn ghost tb" id="tourbtn" title="30-second guided tour">? Tour</button><button class="btn ghost tb" id="helpbtn" title="Keyboard shortcuts and accessibility (?)" aria-label="Keyboard shortcuts">⌨</button></div>
+  <div id="pitchbox"><canvas id="pitch" width="1050" height="680" aria-label="Live pitch" tabindex="0"></canvas>
+   <div id="reelui" hidden role="group" aria-label="Highlights controls"><span id="reelst" aria-live="polite"></span><button id="reelprev" aria-label="Previous moment">⏮</button><button id="reelpp" aria-label="Pause or play">⏸</button><button id="reelnext" aria-label="Next moment">⏭</button><button id="reelcard" title="Download shareable recap card">⬇ Card</button><button id="reelx" aria-label="Exit highlights">✕</button></div>
    <div id="goal"><img id="gcrest" alt=""><div><div class="gw">GOAL</div><div class="gs" id="gscorer"></div></div><div class="gsc" id="gscore"></div></div>
    <div id="buffer">Syncing live commentary…</div></div>
   <div class="legend"><span><b>●</b> ball</span><span><b>①</b> players at their average position</span><span><b>━</b> pass · <b>┅</b> misplaced</span><span><b>◯</b> shot (size = chance quality)</span><span><b>★</b> goal</span></div>
@@ -153,8 +171,8 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
   <div class="pane" id="p-tactics"><p class="cap">4-3-3. Dashed = nominal position, filled = average position on the ball so far. Attacking left → right.</p><div class="seg" id="tteam" style="margin-bottom:8px"></div><canvas id="tac" width="1050" height="680" style="width:100%;border-radius:6px"></canvas></div>
   <div class="pane" id="p-compare"><div style="display:flex;gap:6px;margin-bottom:8px"><select id="pa"></select><select id="pb"></select></div><div id="cmp"></div></div>
   <div class="pane" id="p-preview"><div id="prev">Loading…</div></div>
-  <div class="pane" id="p-ask"><p class="cap">Answers use only events up to now and are fact-checked.</p><div id="chat"></div><div class="sugg" id="sugg"></div><form class="ask" id="askf"><input id="q" maxlength="300" placeholder="Ask about this match…" autocomplete="off"><button class="btn">Ask</button></form></div>
-  <div class="pane" id="p-agents"><p class="cap">Five agents (Microsoft Agent Framework) process each batch of events. ✦ in the feed = line written by the AI room.</p><div class="pipe" id="pipe"></div><h3>Agent handoffs</h3><div id="handoff"><p class="cap">Starts with the first batch.</p></div>
+  <div class="pane" id="p-ask"><p class="cap">An agent plans tool calls (find shots, passes, cards, compare teams, player stats), runs them on events up to now and highlights the answer on the pitch. Open 🛠 to see each call.</p><div id="chat"></div><div class="sugg" id="sugg"></div><form class="ask" id="askf"><input id="q" maxlength="300" placeholder="Ask about this match…" autocomplete="off"><button class="btn">Ask</button></form></div>
+  <div class="pane" id="p-agents"><p class="cap">Five agents (Microsoft Agent Framework) process each batch of events. ✦ in the feed = line written by the AI room.</p><div class="pipe" id="pipe"></div><p class="cap" style="margin-top:6px">🎯 Personalise in action: <button class="btn ghost" style="padding:2px 8px" onclick="perspectives()">👥 Same moment, 3 viewers</button></p><h3>Agent handoffs</h3><div id="handoff"><p class="cap">Starts with the first batch.</p></div>
   <div class="chaos"><b>Chaos test</b> <select id="chaosag" aria-label="Agent to break"><option value="explain">Explain</option><option value="interpret">Interpret</option><option value="salience">Salience</option><option value="render">Render</option><option value="personalise">Personalise</option><option value="ingest">Ingest</option></select>
   <select id="chaossev" aria-label="Fault severity"><option value="transient">fails once → retry</option><option value="hard">fails twice → fallback</option></select><button id="chaosbtn">💥 Break it</button><div class="cap" id="chaosmsg">Makes one agent crash; the orchestrator retries, then degrades that agent to its rules path.</div></div>
   <div class="kpis" id="kpis"></div><h3>Trace (OpenTelemetry spans)</h3><div class="log" id="trace"></div></div>
@@ -175,7 +193,9 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
 <div class="view" id="v-about"><div class="panel"><h2>How it works</h2><p class="muted">The browser plays the event feed on one match clock: pitch, score, timeline and feed always agree. Each key event gets an instant caption from the data; the five-agent AI room (Ingest → Interpret → Explain → Render → Personalise, Microsoft Agent Framework on Azure OpenAI gpt-4.1-mini) rewrites it in place once its version passes the numbers, claims and player checks (✦).</p></div>
  <div class="panel"><h2>Synthetic & brand-free</h2><p class="muted">All clubs, players, crests and matches are generated. Win probability uses a simple Poisson model on score, time left and xG. Hosted on Azure Container Apps; about one cent of AI per match.</p></div></div>
 
-<div id="toast"></div>
+<div id="toast"></div><div id="sr" class="sr" aria-live="polite"></div><div id="tourhl"></div><div id="tourtip" role="dialog" aria-label="Guided tour"></div>
+<div id="pv" role="dialog" aria-modal="true" aria-label="Same moment, three viewers"><div class="box"><div id="pvbody"></div><div style="text-align:right;margin-top:12px"><button class="btn ghost" id="pvclose">Close</button></div></div></div>
+<div id="help" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts"><div class="box"><h2>Keyboard & accessibility</h2><p><kbd>K</kbd> kick off · <kbd>Space</kbd> pause · <kbd>B</kbd> best moments · <kbd>V</kbd> 3 viewers · <kbd>/</kbd> ask · <kbd>D</kbd> describe the match now · <kbd>C</kbd> colour-blind palette · <kbd>?</kbd> this help · <kbd>Esc</kbd> close</p><p>In highlights: <kbd>←</kbd> <kbd>→</kbd> previous/next, <kbd>Space</kbd> pause. Tabs: arrow keys.</p><p class="muted">🗣 turns on audio description: kick-off, shots, cards, subs, half-time and highlight captions are read aloud; key moments are also announced to screen readers.</p><div style="text-align:right"><button class="btn ghost" onclick="$('help').classList.remove('on')">Close</button></div></div></div>
 <div id="ft" role="dialog" aria-modal="true"><div class="box"><div id="ftbody"></div>
  <div style="display:flex;gap:8px;margin-top:14px"><a class="btn" id="dl" download>⬇ Report (.md)</a><button class="btn ghost" onclick="print()">Print</button><button class="btn ghost" onclick="$('ft').classList.remove('on')">Close</button></div></div></div>
 <canvas id="share" width="1200" height="630" hidden></canvas>

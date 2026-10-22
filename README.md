@@ -16,6 +16,9 @@ Built for the *Inside the Game* developer hackathon. All clubs, players, crests,
 **Live demo:** https://ca-insidethegame.kindisland-b212215e.francecentral.azurecontainerapps.io
 
 ## For judges: test it in 2 minutes
+0. **Fastest path (30 s):** a short guided tour opens on the first visit. Press **✨ Best moments** (or `B`) to watch the
+   goals and big chances replayed on the pitch with AI captions, without playing the full match. Press **👥 3 viewers**
+   (or `V`) to see the same moment written by the Personalise agent for a fan, a neutral and an analyst, side by side.
 1. Open the live demo. **Replay** is selected by default: the AI commentary for the five showcase matches was
    precomputed by the same agents and checks, so the demo makes **zero live LLM calls**, starts instantly and
    gives every judge the same output.
@@ -29,7 +32,13 @@ Built for the *Inside the Game* developer hackathon. All clubs, players, crests,
    **💥 Break it** to crash one agent: the orchestrator retries it (transient fault) or degrades it to its rules path
    (hard fault), the batch still reaches the viewer, and the recovery appears in the trace (OpenTelemetry spans).
 6. Open **Stats** for the ball and pass intelligence: pass difficulty, ball and shot speed, hardest pass, fastest shot.
-7. Open **League** for the 16-club season (table, matchday slider, leaders, team pages) and **pre-match** comparisons.
+7. In **Ask**, try *“show me all shots by …”* or *“compare teams in the 2nd half”*: a planner agent picks tools
+   (`find_shots`, `find_passes`, `compare_teams`, `player_stats`, `find_events`, `key_moments`), runs them on the event
+   data up to the current minute, highlights the result on the pitch and shows every tool call (🛠 trace).
+8. At full time: **▶ Watch the condensed match** (about 60 s of key moments with captions) and **⬇ Shareable recap card**
+   (1200×630 PNG). Accessibility: ◐ colour-blind-safe palette (Okabe-Ito), 🗣 audio description, full keyboard control
+   (`?` lists the shortcuts), ARIA tabs and live regions.
+9. Open **League** for the 16-club season (table, matchday slider, leaders, team pages) and **pre-match** comparisons.
 
 ## Microsoft technologies used
 | Technology | Where |
@@ -116,6 +125,9 @@ Docker: `docker build -t inside-the-game . && docker run -p 8000:8000 inside-the
 | `GET /api/match?seed=7` | full synthetic match as JSON |
 | `GET /api/stream?seed=7&speed=20&mode=fan&lang=es&club=harbour&player=H10&viewer=v1` | SSE: `tick` per raw event; `cards` per batch (`cards[]`, `trace[]`, `report`, `usage`, `phase`, `index`). `speed=60` → 1 match minute per second |
 | `GET /api/card-schema` | JSON schema of overlay cards |
+| `POST /api/agent` `{seed, question, minute}` | ask with tools: plan (AI planner when Live AI is on, else deterministic router) → tool calls → answer, `trace[]`, pitch `highlights[]` |
+| `GET /api/perspectives?seed=58&minute=60&lang=en` | latest key moment written for fan / neutral / analyst (replay cache, or a rules-mode sandbox room) |
+| `GET /api/reel?seed=58&mode=fan&lang=en` | highlight reel: key moments with build-up events and captions |
 
 ### Configuration (env vars, see `.env.example`)
 `ITG_LLM_PROVIDER=mock|azure`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`,

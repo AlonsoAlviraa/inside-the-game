@@ -16,7 +16,7 @@ from .room import CARD_SCHEMA, CommentaryRoom, ViewerMemory, ViewerProfile
 FLUSH = {"goal", "period_end", "match_end"}
 from .generator import stream
 from . import analyst, insights
-from . import league, season, replay
+from . import league, season, replay, tools_agent
 from .teams import LEAGUE_DAYS, LEAGUE_NAME, _POOL, club_list, crest_svg, fixture_list
 
 WEB_DIR = Path(os.getenv("ITG_WEB_DIR", Path(__file__).resolve().parents[2] / "web"))
@@ -228,6 +228,96 @@ class Question(BaseModel):
 async def ask(q: Question) -> dict:
     """Ask-the-analyst: grounded Q&A over the match so far (only facts up to `minute`, so no spoilers)."""
     return await analyst.ask(q.seed, q.question, q.minute, q.lang)
+
+
+class AgentQ(BaseModel):
+    seed: int = 7
+    question: str = Field(min_length=1, max_length=300)
+    minute: int = Field(200, ge=0, le=200)
+
+
+@app.post("/api/agent")
+async def agent_ask(q: AgentQ) -> dict:
+    """Ask with tools: planner -> tool calls over the event stream -> answer + pitch highlights + tool trace."""
+    return await tools_agent.ask(q.seed, q.question, q.minute)
+
+
+def _cached_card(seed: int, mode: str, lang: str, card_id: str) -> dict | None:
+    c = replay.load(seed, mode, lang)
+    if not c:
+        return None
+    for b in c["batches"]:
+        for card in b["payload"]["cards"]:
+            if card.get("id") == card_id:
+                return card
+    return None
+
+
+@app.get("/api/perspectives")
+async def perspectives(seed: int = 7, minute: int = Query(200, ge=1, le=200), lang: str = "en") -> dict:
+    """Same moment, three viewers: the Personalise agent's output for fan, neutral and analyst side by side.
+    Showcase matches use the precomputed (real model) commentary; other matches run a rules-mode sandbox room (no cost)."""
+    evs = insights.events(seed)
+    key = [e for e in evs if e["type"] in ("goal", "card", "shot") and e["minute"] <= minute and (e["type"] != "shot" or e["xg"] >= 0.15)]
+    key = [e for e in key if e["type"] == "goal"] or key
+    if not key:
+        return {"event": None, "modes": {}}
+    ev = key[-1]
+    cid = f"ev{ev['id']}"
+    out = {}
+    for mode in replay.MODES:
+        card, source = _cached_card(seed, mode, lang, cid), "precomputed AI (replay cache)"
+        if card is None:
+            room = CommentaryRoom(seed, online=False)
+            profile = ViewerProfile(mode=mode, language=lang)
+            batch, cards = [], []
+            for e in evs:
+                if e["id"] > ev["id"]:
+                    break
+                batch.append(e)
+                if e["t"] - batch[0]["t"] >= 300 or e["type"] in FLUSH or e["id"] == ev["id"]:
+                    cards += (await room.process_batch(batch, profile)).cards
+                    batch = []
+            cards = localise.ensure(cards, lang, mode)
+            card = next((c for c in cards if c.get("id") == cid), cards[0] if cards else None)
+            source = "rules-mode sandbox room"
+        if card:
+            out[mode] = {"title": card.get("title"), "text": card.get("text"), "priority": card.get("priority"),
+                         "source": source + (" · LLM" if "llm" in str(card.get("source")) else ""), "facts": {k: v for k, v in (card.get("facts") or {}).items() if k in ("xg", "phase", "score", "player_match_xg")}}
+    return {"event": {k: ev.get(k) for k in ("id", "type", "minute", "player", "team", "xg", "outcome", "card")}, "modes": out}
+
+
+@app.get("/api/reel")
+async def reel(seed: int = 7, mode: str = "fan", lang: str = "en", limit: int = Query(8, ge=1, le=12)) -> dict:
+    """Condensed match: the key moments with their build-up (last passes before each), plus caption text from the
+    commentary cache when available. The client animates it on the pitch in about 60 seconds."""
+    evs = insights.events(seed)
+    meta = evs[0]["meta"]
+    km = insights.key_moments(list(evs), meta)
+    goals = [m for m in km if m["kind"] == "goal"]
+    big = sorted([m for m in km if m["kind"] != "goal" and m["importance"] >= 4], key=lambda m: -(m.get("xg") or 0.5))
+    tp = sorted([m for m in km if m["kind"] == "threat_pass"], key=lambda m: -m["xt"])[:2]
+    pick = sorted((goals + big + tp)[:limit], key=lambda m: m["event_id"])
+    by_id = {e["id"]: i for i, e in enumerate(evs)}
+    clips = []
+    for m in pick:
+        i = by_id[m["event_id"]]
+        j, build = i, []
+        while j > 0 and len(build) < 6:
+            e = evs[j]
+            if e["type"] in ("pass", "shot", "goal", "foul") or e["id"] == m["event_id"]:
+                build.append(e)
+            if e["type"] in ("possession_start", "turnover", "period_start") and e["id"] != m["event_id"]:
+                break
+            j -= 1
+        cid = f"ev{m['event_id']}"
+        card = _cached_card(seed, mode, lang, cid) if seed in replay.SHOWCASE else None
+        clips.append({"moment": m, "events": [{k: v for k, v in e.items() if k != "meta"} for e in reversed(build)],
+                      "caption": card["text"] if card else m["label"], "title": card["title"] if card else m["label"],
+                      "ai": bool(card and "llm" in str(card.get("source")))})
+    end = next((e for e in reversed(evs) if e["type"] == "match_end"), None)
+    return {"seed": seed, "home": {k: meta["home"][k] for k in ("id", "name", "short", "color")},
+            "away": {k: meta["away"][k] for k in ("id", "name", "short", "color")}, "score": end["score"] if end else {}, "clips": clips}
 
 
 @app.get("/api/league")
