@@ -22,6 +22,7 @@ class RoomState:
     """Blackboard shared by all five agents (one per match/stream)."""
     meta: dict = field(default_factory=dict)
     score: dict = field(default_factory=dict)
+    score_hist: list = field(default_factory=list)
     minute: int = 0
     period: int = 1
     last_t: float = -1.0
@@ -53,6 +54,17 @@ class RoomState:
 
     def roster(self) -> list[str]:
         return [p["name"] for side in ("home", "away") for p in self.meta.get(side, {}).get("players", [])]
+
+    def score_line_at(self, event_id: int) -> str:
+        """Score as it stood at that event (a batch can contain a later goal; the card must not see it)."""
+        if not self.meta or not self.score:
+            return ""
+        sc = {self.meta["home"]["id"]: 0, self.meta["away"]["id"]: 0}
+        for eid, s in self.score_hist:
+            if eid <= event_id:
+                sc = s
+        h, a = self.meta["home"], self.meta["away"]
+        return f"{h['short']} {sc.get(h['id'], 0)}-{sc.get(a['id'], 0)} {a['short']}"
 
     def score_line(self) -> str:
         if not self.meta or not self.score:

@@ -137,6 +137,7 @@ def check(text: str, facts: dict, snap: dict | None = None, meta: dict | None = 
         issues.append("period: full-time described as half-time")
     if mom in ("period_end", "match_end") and re.search(r"end of the \d+\w* minute", low):
         issues.append("period: use Half-time/Full-time, not 'end of the Nth minute'")
+    issues += event_consistency(text, facts)
     return issues
 
 
@@ -162,3 +163,24 @@ def fan_violations(text: str, facts: dict) -> list[str]:
     if facts.get("moment") == "goal" and facts.get("player") and facts["player"] not in text:
         out.append("fan: goal card must name the scorer")
     return out
+
+
+_SCORELINE = re.compile(r"(?<![\d.])(\d{1,2})\s*[-–:]\s*(\d{1,2})(?!\d|[.,]\d)")
+_SCORED = re.compile(r"\b(scores|scored|nets|netted|finds the net|puts it away|marca|anota|marc[óo]|en la red|marque|a marqué|au fond des filets)\b", re.I)
+_NEAR = re.compile(r"\b(almost|nearly|so close|casi|por poco|presque|a failli|manque)\b", re.I)
+
+
+def event_consistency(text: str, facts: dict) -> list[str]:
+    """Event cards only: the scoreline quoted must be the score at that moment, and a shot that did not go in
+    must not be described as scored (added after the grounding eval found both slipping through)."""
+    if not isinstance(facts, dict) or not facts.get("moment") or not isinstance(facts.get("score"), str):
+        return []
+    issues = []
+    real = sorted(int(x) for x in re.findall(r"\d+", facts["score"])[:2])
+    for a, b in _SCORELINE.findall(text):
+        if len(real) == 2 and sorted((int(a), int(b))) != real:
+            issues.append(f"scoreline {a}-{b} is not the score at this moment ({facts['score']})")
+    if facts.get("moment") == "shot" and facts.get("outcome") not in (None, "goal") \
+            and _SCORED.search(text) and not _NEAR.search(text):
+        issues.append(f"describes a {facts.get('outcome')} shot as scored")
+    return issues

@@ -1,0 +1,33 @@
+{
+  "source": "45 precomputed full-match AI runs (replay caches, gpt-4.1-mini on Azure OpenAI)",
+  "matches_measured": 45,
+  "ai_cost_usd_per_match": {
+    "mean": 0.0105,
+    "max": 0.0168
+  },
+  "model_calls_per_match": {
+    "mean": 38.3,
+    "max": 54
+  },
+  "agent_latency_ms_per_batch": {
+    "p50": 2865,
+    "p95": 12448,
+    "n": 1746
+  },
+  "cards_per_match": 29.6,
+  "share_of_cards_with_ai_text": 0.945,
+  "languages": [
+    "en",
+    "es",
+    "fr"
+  ],
+  "personas": [
+    "analyst",
+    "fan",
+    "neutral"
+  ],
+  "batch_match_seconds": [
+    150
+  ],
+  "note": "Latency is model + agent time per batch of match events; the instant data caption is shown first, so the viewer never waits on it."
+}

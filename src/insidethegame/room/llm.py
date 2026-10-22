@@ -111,8 +111,19 @@ class Brain:
         """Return model text, or None when offline / over budget / failed (caller falls back)."""
         if self.agent is None:
             return None
+        from ..guard import LLM_ALLOWED, SPEND
         stats = self.ledger.by_agent[self.name]
         est = (len(self.instructions) + len(prompt)) // 3 + self.max_tokens + est_extra
+        if not LLM_ALLOWED.get():
+            stats["skipped_limit"] = stats.get("skipped_limit", 0) + 1
+            if entry is not None:
+                entry["llm"] = "skipped (rate limit: rules fallback)"
+            return None
+        if not SPEND.allow(est / 1e6 * PRICE_OUT):
+            stats["skipped_cap"] = stats.get("skipped_cap", 0) + 1
+            if entry is not None:
+                entry["llm"] = "skipped (daily AI spend cap: rules fallback)"
+            return None
         if not await self.budget.acquire(est):
             stats["skipped_budget"] += 1
             if entry is not None:
@@ -128,6 +139,7 @@ class Brain:
         u = getattr(r, "usage_details", None) or {}
         ti, to = int(u.get("input_token_count") or 0), int(u.get("output_token_count") or 0)
         tools = sum(1 for m in r.messages for c in m.contents if getattr(c, "type", "") == "function_call")
+        SPEND.add(ti / 1e6 * PRICE_IN + to / 1e6 * PRICE_OUT if ti else est / 1e6 * PRICE_OUT)
         stats["calls"] += 1
         stats["input"] += ti
         stats["output"] += to

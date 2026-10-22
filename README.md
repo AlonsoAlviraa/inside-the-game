@@ -15,6 +15,24 @@ Built for the *Inside the Game* developer hackathon. All clubs, players, crests,
 
 **Live demo:** https://ca-insidethegame.kindisland-b212215e.francecentral.azurecontainerapps.io
 
+## Who it's for (and what we measured)
+* **Broadcasters' second screen:** one event feed becomes three personas (fan, neutral, analyst) in three languages
+  (English, Spanish, French) at the same time.
+* **Blind and low-vision fans:** audio description of every key moment, screen-reader announcements, full keyboard
+  control, a colour-blind palette and alt text on every crest.
+* **Small leagues with no commentary team:** any match with an event feed gets captions, a tactical read and a
+  full-time report. Without AI (budget hit, outage) it keeps working from data alone.
+
+Measured on our own 45 full-match AI runs (`scripts/measure_impact.py` → `evals/impact_metrics.json`). These are not market statistics:
+
+| Measure | Value |
+|---|---|
+| AI cost per match (gpt-4.1-mini) | mean **$0.0105**, max $0.0168 |
+| Model calls per match | mean 38, max 54 |
+| Agent time per batch | p50 2.9 s, p95 12.4 s (the data caption shows instantly, so the AI text replaces it in place) |
+| Languages × personas | 3 × 3 |
+| Contradictions with the raw event feed | 7 flagged in 2,117 checks on 967 AI cards: 5 real (one stale-score bug, now fixed), 2 hypothetical scores (see Evaluation) |
+
 ## For judges: test it in 2 minutes
 0. **Fastest path (30 s):** a short guided tour opens on the first visit. Press **✨ Best moments** (or `B`) to watch the
    goals and big chances replayed on the pitch with AI captions, without playing the full match. Press **👥 3 viewers**
@@ -165,6 +183,28 @@ pass with player and minute. All computed from the synthetic x/y coordinates and
 "now" line also shows each shot's speed and distance. Player running distance/speed is not shown because the
 synthetic feed has event coordinates, not continuous player tracking.
 
+## Security, abuse limits & the critic loop
+* **Session IDs** are issued by the server (`secrets.token_urlsafe`). The first SSE event, `session`, carries the ID. Chaos can arm a fault only
+  on a live room the server created, and sandbox chaos runs are cached, so they cost nothing.
+* **Per-IP rate limits** (`guard.py`): Ask/Agent 10/min and 60/h, live AI stream 2/h, chaos 6/min. At most 2 concurrent live-AI
+  rooms. A **daily AI spend cap** (`ITG_DAILY_USD`, default $3) is enforced inside `Brain.ask`, so it covers every LLM call.
+  Over a limit, the app degrades to replay or data-only commentary rather than failing. Chaos returns 429.
+  An optional `ITG_DEMO_TOKEN` lets a judge bypass the limits.
+* **Input validation:** unknown seed, mode, lang or club, or oversized text, returns 422. Live rooms are removed on disconnect, with a 3 h TTL as a backstop.
+* **Prompt-injection guard** (`room/injection.py`):
+  * Questions are normalised and stripped of control characters and markup.
+  * Override, role-play, prompt-extraction and exfiltration patterns are refused before any model call.
+  * The system prompt is hardened, and the question is wrapped as data.
+  * Answers are checked for prompt leakage, links or code, and off-topic content.
+  * Content Safety runs on answers when it is enabled.
+* **Planner → tools → Critic** (`tools_agent.py`):
+  * The **Critic** rejects plans that name a player not in the match, swap a player and a team, or drop the half filter.
+  * After the tools run, it re-derives shots, goals and xG through an independent code path (`insights.player_stats` / `team_stats`).
+    It also checks that no highlight is past the current minute, that there is one pitch mark per shot, and that every number in the answer comes from a tool result.
+  * A rejected plan is re-planned by rules. A rejected result is withheld.
+  * Every guard and critic verdict appears in the Ask trace (✓ verified / ✗ rejected).
+* `/api/usage` returns only aggregates: spend today, remaining budget and the limits.
+
 ## Fault tolerance & chaos test (multi-agent orchestration)
 Every agent step runs under a recovery policy in `room/workflow.py`: **attempt → retry → rules fallback**
 (the agent's LLM brain is switched off for that call, so it uses its deterministic, fact-checked template path).
@@ -219,6 +259,37 @@ reasons: `evals/results.json`; summary: `evals/summary.json`.
 * **Foundry Agent Service:** the hosted `itg-analyst-desk` agent answered 3/3 test questions on match 42 with zero
   issues from our numbers/claims/roster verifier (`evals/foundry_agent_run.json`).
 
+### Model-free grounding eval: LLM vs rules baseline
+The Foundry evals above use gpt-4.1-mini as the judge, which is the same model that writes the lines. No second model
+is deployed on the resource, and adding one would be a new paid deployment. So `scripts/grounding_eval.py` adds a deterministic check
+that uses no model. It checks each AI event card against the **raw event feed**, not against the facts the agent was shown:
+
+* **Outcome:** a goal is called a goal, and a missed shot is never called "scored".
+* **Attribution:** every player named is the event's player or appears in its facts.
+* **Scoreline:** any score quoted equals the score at that moment.
+* **Minute:** any minute quoted is within ±1.
+
+The baseline is the same room in rules mode on the same batches and cards. Results: `evals/grounding.json`. Per-card rows: `evals/grounding_rows.jsonl`.
+They were logged to the Foundry project as evaluation `itg-event-grounding-llm-vs-rules` with a code-only evaluator (`evals/grounding_foundry.json`).
+
+| System (967 cards each) | Checks | Pass rate | Outcome | Attribution | Scoreline | Minute |
+|---|---|---|---|---|---|---|
+| LLM (cached runs) | 2,117 | **99.67%** | 100% | 100% | 98.67% | 100% |
+| LLM + new event-consistency guard (7 cards fall back to rules) | 2,108 | **100%** | 100% | 100% | 100% | 100% |
+| Rules baseline | 1,575 | 100% | 100% | 100% | 100% | – |
+
+**What the eval found:** 5 of the 7 flags are real. They are the same 35' shot in match 7, written for 5 persona/language variants,
+and each one quotes 0-1 when the goal only came at 37'. The cause was a bug in the facts we handed the agent: the batch-end score
+instead of the score at the event. The other 2 are hypothetical scores ("missing the equaliser at 2-2"), which the metric cannot tell apart from a claim. That bug is fixed (`RoomState.score_line_at`), and a new
+runtime check (`semantic.event_consistency`) now rejects a wrong scoreline or a missed shot called "scored".
+The rules baseline is perfectly grounded by construction. What the LLM adds is variety, persona and language, at a measured 0.24% real contradiction rate (5/2,117) before the fix. The new guard is conservative: hypothetical scorelines fall back to the rules line too.
+
+**Limits, stated honestly:**
+* The checks are pattern-based (en/es/fr). They catch contradictions, not style or insight.
+* There are no human labels.
+* The goal-word lists were tuned on these same synthetic matches.
+* The Foundry LLM-judge scores share the generator's model.
+* The cached replays were generated before the fix, so those 7 cards are still in the cache.
 
 ## Responsible AI
 * **Grounding:** the agents only see facts computed from the event stream; every number must exist in those facts,
@@ -230,7 +301,7 @@ reasons: `evals/results.json`; summary: `evals/summary.json`.
   UI says replay vs live. Evaluation results are published in `evals/`.
 * **Data and IP:** 100% synthetic data; no real clubs, players, leagues, footage or third-party brand assets.
 * **Cost and quota:** token budget per minute, batching, replay cache; about one cent of AI per live match.
-* **Limits:** the judge model for evaluations is the same small model; xG/xT here are illustrative, not trained on real data.
+* **Limits:** the LLM-judge evaluations use the same small model (hence the model-free grounding eval above); xG/xT here are illustrative, not trained on real data.
 
 ## License
 MIT

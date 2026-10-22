@@ -11,7 +11,7 @@ def test_health_and_index():
 
 
 def test_sse_stream():
-    with c.stream("GET", "/api/stream?seed=1&speed=0&mode=analyst") as r:
+    with c.stream("GET", "/api/stream?seed=1010&speed=0&mode=analyst") as r:
         assert r.headers["content-type"].startswith("text/event-stream")
         lines = list(r.iter_lines())
     ev_types = [l[7:] for l in lines if l.startswith("event: ")]

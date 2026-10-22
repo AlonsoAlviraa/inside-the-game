@@ -5,9 +5,11 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field
+import time
+
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from pydantic import BaseModel, Field, field_validator
 from fastapi.staticfiles import StaticFiles
 
 from .room import localise
@@ -18,12 +20,80 @@ from .generator import stream
 from . import analyst, insights
 from . import league, season, replay, tools_agent
 from .teams import LEAGUE_DAYS, LEAGUE_NAME, _POOL, club_list, crest_svg, fixture_list
+from . import guard
+from .guard import LIMITER, LLM_ALLOWED, SPEND
 
 WEB_DIR = Path(os.getenv("ITG_WEB_DIR", Path(__file__).resolve().parents[2] / "web"))
 app = FastAPI(title="Inside the Game - Commentary Room", version="0.1.0")
 
 
-ROOMS: dict[str, CommentaryRoom] = {}   # live rooms by client stream id (for fault injection)
+ROOMS: dict[str, tuple[CommentaryRoom, float]] = {}   # live rooms by server-issued session id -> (room, started)
+ROOM_TTL_S = 3 * 3600
+VALID_SEEDS = frozenset(f["seed"] for f in fixture_list())
+MODES, LANGS = ("fan", "neutral", "analyst"), ("en", "es", "fr")
+
+
+def _purge_rooms(now: float | None = None) -> None:
+    """TTL for live rooms (normally removed when the stream ends or the client disconnects)."""
+    now = time.monotonic() if now is None else now
+    for k in [k for k, (_, t0) in ROOMS.items() if now - t0 > ROOM_TTL_S]:
+        ROOMS.pop(k, None)
+
+
+def _bad(msg: str) -> JSONResponse:
+    return JSONResponse({"error": msg}, status_code=422)
+
+
+@app.middleware("http")
+async def validate_params(request: Request, call_next):
+    """Input validation for every API query string: only the published fixtures, personas and languages."""
+    if request.url.path.startswith("/api/"):
+        q = request.query_params
+        if "seed" in q and (not q["seed"].lstrip("-").isdigit() or int(q["seed"]) not in VALID_SEEDS):
+            return _bad("unknown match: use a seed from /api/matches")
+        if q.get("mode") and q["mode"] not in MODES:
+            return _bad(f"mode must be one of {MODES}")
+        if q.get("lang") and q["lang"] not in LANGS:
+            return _bad(f"lang must be one of {LANGS}")
+        if q.get("club") and q["club"] not in _POOL:
+            return _bad("unknown club")
+        if any(len(q.get(k, "")) > 60 for k in ("player", "viewer", "a", "b", "token")):
+            return _bad("parameter too long")
+    return await call_next(request)
+
+
+def _ip(request: Request) -> str:
+    return guard.client_ip(request.headers, request.client.host if request.client else None)
+
+
+def _gate(request: Request, kind: str) -> bool:
+    """Per-IP limit for model-backed endpoints. Over the limit => this request runs without model calls."""
+    ok = guard.has_demo_token(request.headers, request.query_params) or LIMITER.hit(kind, _ip(request))
+    LLM_ALLOWED.set(ok)
+    return ok
+
+
+class _MatchParams(BaseModel):
+    @field_validator("seed", check_fields=False)
+    @classmethod
+    def _seed(cls, v: int) -> int:
+        if v not in VALID_SEEDS:
+            raise ValueError("unknown match: use a seed from /api/matches")
+        return v
+
+    @field_validator("mode", check_fields=False)
+    @classmethod
+    def _mode(cls, v: str) -> str:
+        if v not in MODES:
+            raise ValueError(f"mode must be one of {MODES}")
+        return v
+
+    @field_validator("lang", check_fields=False)
+    @classmethod
+    def _lang(cls, v: str) -> str:
+        if v not in LANGS:
+            raise ValueError(f"lang must be one of {LANGS}")
+        return v
 AGENTS = ("ingest", "interpret", "salience", "explain", "render", "personalise")
 _WARM = {"done": False}
 
@@ -49,27 +119,37 @@ async def health() -> dict:
             "live_rooms": len(ROOMS)}
 
 
-class ChaosReq(BaseModel):
+class ChaosReq(_MatchParams):
     agent: str = Field("explain", description="agent to break: " + ", ".join(AGENTS))
     severity: str = Field("transient", pattern="^(transient|hard)$")
     seed: int = 7
     minute: int = Field(30, ge=1, le=95)
     mode: str = "fan"
     lang: str = "en"
-    sid: str | None = None
+    sid: str | None = Field(None, max_length=40)
+
+
+_SANDBOX: dict[tuple, dict] = {}
 
 
 @app.post("/api/chaos")
-async def chaos(req: ChaosReq) -> dict:
+async def chaos(req: ChaosReq, request: Request) -> dict:
     """Fault injection. With the `sid` of a live stream, arms a failure in that room's next batch (the trace
     arrives with the next cards). Otherwise runs a sandbox room in rules mode (no model calls, zero cost) up to
     `minute`, breaks `agent` on the last batch and returns that batch's trace so the recovery is visible."""
     if req.agent not in AGENTS:
         return {"error": f"unknown agent {req.agent}"}
-    room = ROOMS.get(req.sid or "")
-    if room is not None:
-        room.inject_fault(req.agent, req.severity)
+    if not LIMITER.hit("chaos", _ip(request)):
+        return JSONResponse({"error": "too many fault injections from this address; try again in a minute"}, status_code=429)
+    _purge_rooms()
+    # Live: only the session that owns the stream knows its id (server-issued, 144 random bits).
+    live = ROOMS.get(req.sid or "")
+    if live is not None:
+        live[0].inject_fault(req.agent, req.severity)
         return {"armed": True, "live": True, "agent": req.agent, "severity": req.severity}
+    key = (req.agent, req.severity, req.seed, req.minute, req.mode, req.lang)
+    if key in _SANDBOX:  # same sandbox run already computed: no CPU spent
+        return _SANDBOX[key] | {"cached": True}
     sandbox = CommentaryRoom(req.seed, online=False)
     profile = ViewerProfile(mode=req.mode, language=req.lang)
     evs = [e for e in insights.events(req.seed) if e.get("minute", 0) <= req.minute]
@@ -89,9 +169,13 @@ async def chaos(req: ChaosReq) -> dict:
         if i == len(batches) - 1:
             sandbox.inject_fault(req.agent, req.severity)
         b = await sandbox.process_batch(batch, profile)
-    return {"armed": True, "live": False, "agent": req.agent, "severity": req.severity, "minute": sandbox.state.minute,
-            "orchestrator": sandbox.orchestrator, "trace": b.trace if b else [],
-            "cards": localise.ensure(b.cards, req.lang, req.mode) if b else [], "errors": sandbox.errors[-3:]}
+    out = {"armed": True, "live": False, "agent": req.agent, "severity": req.severity, "minute": sandbox.state.minute,
+           "orchestrator": sandbox.orchestrator, "trace": b.trace if b else [],
+           "cards": localise.ensure(b.cards, req.lang, req.mode) if b else [], "errors": sandbox.errors[-3:]}
+    if len(_SANDBOX) > 500:
+        _SANDBOX.clear()
+    _SANDBOX[key] = out
+    return out
 
 
 @app.get("/api/match")
@@ -104,23 +188,42 @@ async def match(seed: int = 7, meta_only: bool = False) -> dict:
 @app.get("/api/stream")
 async def sse(seed: int = 7, speed: float = Query(60.0, ge=0, le=5000), mode: str = "fan",
               lang: str = "en", club: str | None = None, player: str | None = None, viewer: str = "anonymous",
-              batch_s: float = Query(float(os.getenv("ITG_BATCH_S", "300")), ge=30, le=900), replay_mode: bool = Query(False, alias="replay"), sid: str | None = None):
+              batch_s: float = Query(float(os.getenv("ITG_BATCH_S", "300")), ge=30, le=900), replay_mode: bool = Query(False, alias="replay"),
+              request: Request = None):
     """SSE: `tick` per raw event (pitch/score), `cards` per agent batch (overlay cards + agent trace + usage).
     Events are batched per `batch_s` match-seconds (flushed early on goals and period ends) so the room makes
-    a handful of LLM calls per batch and stays under the deployment's tokens-per-minute quota."""
+    a handful of LLM calls per batch and stays under the deployment's tokens-per-minute quota.
+
+    Live (non-replay) model rooms are the expensive path: at most ITG_MAX_LIVE_ROOMS at once and 2 per hour per
+    IP (a demo token bypasses the per-IP limit). Over the limit the viewer gets the cached replay when one
+    exists, otherwise the same room in rules mode (no model calls), and a `notice` event says why."""
+    notice = None
+    _purge_rooms()
+    if not (replay_mode and replay.load(seed, mode, lang)):
+        busy = len(ROOMS) >= guard.MAX_LIVE_ROOMS
+        if busy or not _gate(request, "live"):
+            notice = ("All live AI rooms are busy" if busy else "Live AI limit for your address reached (2 per hour)")
+            LLM_ALLOWED.set(False)
+            if replay.load(seed, mode, lang):
+                replay_mode, notice = True, notice + ": showing the precomputed AI commentary instead."
+            else:
+                notice += ": commentary runs in rules mode (no model calls)."
     cached = replay.load(seed, mode, lang) if replay_mode else None
     if cached:
-        return StreamingResponse(_replay_gen(cached, seed, speed, club or None, player or None), media_type="text/event-stream",
+        return StreamingResponse(_replay_gen(cached, seed, speed, club or None, player or None, notice), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    online = LLM_ALLOWED.get() and None  # None = Azure if configured; False = rules mode
+    sid = guard.new_session_id()
     memory = ViewerMemory()
     profile = memory.fill_defaults(ViewerProfile(mode=mode, language=lang, club=club or None,
                                                  player=player or None, viewer_id=viewer))
     memory.remember_profile(profile)
-    room = CommentaryRoom(seed, memory=memory)
-    if sid:
-        ROOMS[sid[:40]] = room
+    room = CommentaryRoom(seed, memory=memory, online=online)
+    if online is None:
+        ROOMS[sid] = (room, time.monotonic())
 
     async def gen():
+        yield f"event: session\ndata: {json.dumps({'sid': sid if online is None else None, 'live_ai': online is None, 'notice': notice})}\n\n"
         # Raw events keep flowing at match speed; batches are handed to a single background worker so LLM
         # latency never stalls the pitch. Cards are emitted (in order) as soon as each batch finishes.
         await room.start()
@@ -168,9 +271,8 @@ async def sse(seed: int = 7, speed: float = Query(60.0, ge=0, le=5000), mode: st
             while (out := await q_out.get()) is not None:
                 yield f"event: cards\ndata: {json.dumps(out, default=str)}\n\n"
         finally:
-            task.cancel()
-            if sid:
-                ROOMS.pop(sid[:40], None)
+            task.cancel()  # also runs on client disconnect (generator closed)
+            ROOMS.pop(sid, None)
             memory.save()
             await room.close()
         yield "event: end\ndata: {}\n\n"
@@ -179,8 +281,9 @@ async def sse(seed: int = 7, speed: float = Query(60.0, ge=0, le=5000), mode: st
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-async def _replay_gen(cached: dict, seed: int, speed: float, club: str | None, player: str | None):
+async def _replay_gen(cached: dict, seed: int, speed: float, club: str | None, player: str | None, notice: str | None = None):
     """Replay: same event clock as live, cached AI batches released right after the event that closed them."""
+    yield f"event: session\ndata: {json.dumps({'sid': None, 'live_ai': False, 'replay': True, 'notice': notice})}\n\n"
     by_ev = {b["after_event"]: b["payload"] for b in cached["batches"]}
     score: dict = {}
     async for ev in stream(seed, speed):
@@ -206,10 +309,12 @@ async def matches() -> dict:
 
 @app.get("/api/report")
 async def report(seed: int = 7, minute: int = Query(200, ge=0, le=200), format: str = "json", recap: bool = False,
-                 lang: str = "en"):
+                 lang: str = "en", request: Request = None):
     """Team/player stats, momentum, key moments; `format=md` returns an exportable Markdown report.
     `recap=true` adds a grounded LLM recap (checked by numbers + semantic guards, rules fallback)."""
     r = insights.report(seed, minute)
+    if recap:
+        _gate(request, "ask")
     rc = await analyst.recap(seed, minute, lang) if recap else None
     if format == "md":
         return PlainTextResponse(insights.report_markdown(r, rc["text"] if rc else None), media_type="text/markdown",
@@ -217,7 +322,7 @@ async def report(seed: int = 7, minute: int = Query(200, ge=0, le=200), format: 
     return {**r, "recap": rc}
 
 
-class Question(BaseModel):
+class Question(_MatchParams):
     seed: int = 7
     question: str = Field(min_length=1, max_length=300)
     minute: int = Field(200, ge=0, le=200)
@@ -225,21 +330,24 @@ class Question(BaseModel):
 
 
 @app.post("/api/ask")
-async def ask(q: Question) -> dict:
-    """Ask-the-analyst: grounded Q&A over the match so far (only facts up to `minute`, so no spoilers)."""
-    return await analyst.ask(q.seed, q.question, q.minute, q.lang)
+async def ask(q: Question, request: Request) -> dict:
+    """Ask-the-analyst: grounded Q&A over the match so far (only facts up to `minute`, so no spoilers).
+    Rate limited per IP; over the limit (or over the daily AI spend cap) the answer comes from the rules path."""
+    limited = not _gate(request, "ask")
+    return await analyst.ask(q.seed, q.question, q.minute, q.lang) | ({"limited": "rate limit: rules answer"} if limited else {})
 
 
-class AgentQ(BaseModel):
+class AgentQ(_MatchParams):
     seed: int = 7
     question: str = Field(min_length=1, max_length=300)
     minute: int = Field(200, ge=0, le=200)
 
 
 @app.post("/api/agent")
-async def agent_ask(q: AgentQ) -> dict:
-    """Ask with tools: planner -> tool calls over the event stream -> answer + pitch highlights + tool trace."""
-    return await tools_agent.ask(q.seed, q.question, q.minute)
+async def agent_ask(q: AgentQ, request: Request) -> dict:
+    """Ask with tools: planner -> critic -> tool calls -> critic -> answer + pitch highlights + full trace."""
+    limited = not _gate(request, "ask")
+    return await tools_agent.ask(q.seed, q.question, q.minute) | ({"limited": "rate limit: rules planner"} if limited else {})
 
 
 def _cached_card(seed: int, mode: str, lang: str, card_id: str) -> dict | None:
@@ -377,7 +485,10 @@ async def compare(seed: int, a: str, b: str, minute: int = Query(200, ge=0, le=2
 
 @app.get("/api/usage")
 async def usage() -> dict:
-    return {"analyst_desk": analyst.usage()}
+    """Aggregated only (no per-agent or per-user detail): today's AI spend against the daily cap."""
+    u = analyst.usage()
+    return {"ai_spend": SPEND.status(), "analyst_desk": {"calls": u["calls"], "usd": u["usd"]},
+            "limits_per_ip": {k: [f"{n}/{w}s" for n, w in v] for k, v in guard.LIMITS.items()}, "max_live_rooms": guard.MAX_LIVE_ROOMS}
 
 
 @app.get("/api/card-schema")

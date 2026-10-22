@@ -9,7 +9,7 @@ import json
 import re
 
 from . import insights
-from .room import factcheck, semantic
+from .room import factcheck, injection, safety, semantic
 from .room.llm import Brain, TokenBudget, UsageLedger, azure_enabled, make_chat_client
 
 LANG = {"en": "English", "es": "Spanish", "fr": "French"}
@@ -17,7 +17,7 @@ QA_INSTRUCTIONS = ("You are the analyst desk of a football broadcast about a SYN
                    "Answer the viewer's question in at most 3 sentences using ONLY the JSON facts given. Never invent "
                    "numbers, players or events. Copy numbers exactly as written. xG = expected goals (chance quality), "
                    "xT = expected threat (danger added by passes); pass_share_pct is share of passes, NOT possession. "
-                   "If the facts do not answer the question, say so briefly. Plain text, no markdown.")
+                   "If the facts do not answer the question, say so briefly. Plain text, no markdown." + injection.HARDENING)
 RECAP_INSTRUCTIONS = ("You write a 4-sentence match recap for a SYNTHETIC football match between fictional teams, using ONLY "
                       "the JSON facts. Mention the final score, who scored and when, which side created the better "
                       "chances (xG) and one standout performer. Copy numbers exactly. Never invent facts. Plain text.")
@@ -65,7 +65,15 @@ def verify(text: str, facts: dict, r: dict) -> list[str]:
     issues += semantic.check(text, {"teams": facts["teams"]}, None, None)
     blob = json.dumps(facts)
     issues += [f"attribution: {n} not in facts" for n in _roster(r) if n in text and n not in blob]
+    issues += injection.check_output(text, list(facts["teams"]) + _roster(r))
     return issues
+
+
+async def _safe(text: str) -> bool:
+    """Azure AI Content Safety on the final model text when enabled (free tier); unsafe or error => rules text."""
+    if not safety.enabled():
+        return True
+    return safety.safe((await safety.analyze([text]))[0])
 
 
 # ------------------------------------------------------------------ deterministic answers
@@ -128,20 +136,28 @@ async def _grounded(brain: Brain, prompt: str, facts: dict, r: dict, fallback: s
         if issues:
             fixed = await brain.ask(prompt + "\nYour previous answer had these errors: " + "; ".join(issues)
                                     + "\nRewrite it correctly using only the facts.", {})
-            if fixed and not verify(fixed, facts, r):
+            if fixed and not verify(fixed, facts, r) and await _safe(fixed):
                 return {"text": fixed, "source": "llm", "verified": True, "repaired": True, "issues": issues,
                         "trace": trace}
             return {"text": fallback, "source": "rules", "verified": True, "rejected": issues, "trace": trace}
+        if not await _safe(text):
+            return {"text": fallback, "source": "rules", "verified": True, "rejected": ["content safety"], "trace": trace}
         return {"text": text, "source": "llm", "verified": True, "issues": [], "trace": trace}
     return {"text": fallback, "source": "rules", "verified": True, "issues": [], "trace": trace}
 
 
 async def ask(seed: int, question: str, minute: int = 200, lang: str = "en") -> dict:
-    question = question.strip()[:300]
+    question = injection.sanitize(question)
     facts, r = facts_for(seed, minute)
     fb = fallback_answer(question, facts)
-    prompt = (f"Answer in {LANG.get(lang, 'English')}.\nFACTS: {json.dumps(facts)}\nQUESTION: {question}")
-    out = await _grounded(_brain("analyst", QA_INSTRUCTIONS, 160), prompt, facts, r, fb)
+    flags = injection.detect(question)
+    if flags:  # never sent to the model
+        out = {"text": f"{injection.REFUSAL} {fb}", "source": "rules", "verified": True,
+               "rejected": [f"input guard: {f}" for f in flags], "guard": {"blocked": True, "patterns": flags}, "trace": {"agent": "guard"}}
+    else:
+        prompt = (f"Answer in {LANG.get(lang, 'English')}.\nFACTS: {json.dumps(facts)}\nQUESTION: {injection.wrap(question)}")
+        out = await _grounded(_brain("analyst", QA_INSTRUCTIONS, 160), prompt, facts, r, fb)
+        out["guard"] = {"blocked": False}
     out["evidence"] = [m for m in r["key_moments"] if m["importance"] >= 4][:5]
     return out
 

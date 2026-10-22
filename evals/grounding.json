@@ -1,0 +1,88 @@
+{
+  "method": "Why: our Foundry evals used gpt-4.1-mini as judge, the same model that writes the commentary, and the\nresource has no second model deployed (adding one would be a new paid deployment). So this metric uses no\nmodel at all. For every event card (id evN) it compares the text with event N in the synthetic feed:\n  * outcome: a goal card mentions the goal; a non-goal shot is never described as scored;\n  * attribution: every roster player named is the event's player or appears in the card's facts;\n  * scoreline: any \"a–b\" score in the text equals the real score at that moment;\n  * minute: any minute stated is within ±1 of the event minute (or appears in the facts).\nIt is independent of the runtime guards (they compare text with the facts handed to the model, not with the\nraw feed). Also reported: the same LLM cards after the event-consistency guard this eval motivated. Baseline: the same room in rules mode (no model) over the same batches and the same cards.\nLimits: pattern-based (en/es/fr). It catches contradictions; it cannot judge style or insight, and it has no\nhuman labels. Writes evals/grounding.json.  Usage: python scripts/grounding_eval.py",
+  "cards_compared": {
+    "llm": 967,
+    "llm_with_event_check": 967,
+    "rules": 967
+  },
+  "metrics": {
+    "llm": {
+      "overall_pass_rate": 0.9967,
+      "checks": 2117,
+      "by_check": {
+        "attribution": {
+          "pass_rate": 1.0,
+          "n": 879
+        },
+        "minute": {
+          "pass_rate": 1.0,
+          "n": 173
+        },
+        "outcome": {
+          "pass_rate": 1.0,
+          "n": 538
+        },
+        "scoreline": {
+          "pass_rate": 0.9867,
+          "n": 527
+        }
+      },
+      "by_lang": {
+        "en": 0.9969,
+        "es": 0.997,
+        "fr": 0.9962
+      }
+    },
+    "llm_with_event_check": {
+      "overall_pass_rate": 1.0,
+      "checks": 2108,
+      "by_check": {
+        "attribution": {
+          "pass_rate": 1.0,
+          "n": 879
+        },
+        "minute": {
+          "pass_rate": 1.0,
+          "n": 171
+        },
+        "outcome": {
+          "pass_rate": 1.0,
+          "n": 538
+        },
+        "scoreline": {
+          "pass_rate": 1.0,
+          "n": 520
+        }
+      },
+      "by_lang": {
+        "en": 1.0,
+        "es": 1.0,
+        "fr": 1.0
+      }
+    },
+    "rules": {
+      "overall_pass_rate": 1.0,
+      "checks": 1575,
+      "by_check": {
+        "attribution": {
+          "pass_rate": 1.0,
+          "n": 881
+        },
+        "outcome": {
+          "pass_rate": 1.0,
+          "n": 538
+        },
+        "scoreline": {
+          "pass_rate": 1.0,
+          "n": 156
+        }
+      },
+      "by_lang": {
+        "en": 1.0,
+        "es": 1.0,
+        "fr": 1.0
+      }
+    }
+  },
+  "limits": "Deterministic, pattern-based (en/es/fr); measures contradictions with the event feed, not style or insight. No human labels. Same synthetic matches the system was tuned on."
+}

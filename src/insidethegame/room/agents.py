@@ -60,6 +60,7 @@ class IngestAgent:
             st.minute, st.period = ev["minute"], ev["period"]
             if ev["type"] == "goal":
                 st.score = dict(ev["score"])
+                st.score_hist.append((ev["id"], dict(ev["score"])))
             out.append(ev)
         rows = to_spadl(out, game_id=st.meta.get("seed", 0) if st.meta else 0)
         offset = len(st.spadl)
@@ -246,7 +247,7 @@ class ExplainAgent:
             return {"moment": "tactical_read", "analysis": c["insight"]["text"], "minute": st.minute}
         ev = c["event"]
         f = {"moment": ev["type"], "minute": ev["minute"], "team": st.team_name(ev.get("team")),
-             "score": snap["score"], "phase": snap["phase"]}
+             "score": st.score_line_at(ev["id"]), "phase": snap["phase"]}
         if ev.get("player_id"):
             f["player"] = ev.get("player")
             ps = st.player_stats.get(ev["player_id"], {})

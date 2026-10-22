@@ -66,6 +66,8 @@ def win_probability(seed: int, step: int = 1) -> list[dict]:
         # consume events up to elapsed minute m (both halves on one 0..90 axis)
         while i < len(evs) and _elapsed(evs[i]) <= m:
             e = evs[i]
+            # Goals are counted through their shot: the generator emits every goal as a `shot` (outcome
+            # "goal") followed by a `goal` event carrying the same xG, so adding the goal too would double count.
             if e["type"] == "shot":
                 xg[e["team"]] += e["xg"]
             elif e["type"] == "goal":
@@ -76,13 +78,15 @@ def win_probability(seed: int, step: int = 1) -> list[dict]:
         left = max(0.0, (FULL - played)) / 90 if m < 90 else 0.0
         rh = (1 - w) * ph + w * (xg[H] / max(played, 1) * 90)
         ra = (1 - w) * pa + w * (xg[A] / max(played, 1) * 90)
-        out.append({"minute": m, "score": dict(score), **outcome_probs(score[H], score[A], rh * left, ra * left)})
+        out.append({"minute": m, "score": dict(score), "xg": {k: round(v, 2) for k, v in xg.items()}, **outcome_probs(score[H], score[A], rh * left, ra * left)})
     while i < len(evs):  # stoppage time
+        if evs[i]["type"] == "shot":
+            xg[evs[i]["team"]] += evs[i]["xg"]
         if evs[i]["type"] == "goal":
             score = dict(evs[i]["score"])
         i += 1
     final = outcome_probs(score[H], score[A], 0, 0)
-    out.append({"minute": max(91, last_minute), "score": score, **final, "final": True})
+    out.append({"minute": max(91, last_minute), "score": score, "xg": {k: round(v, 2) for k, v in xg.items()}, **final, "final": True})
     return out
 
 

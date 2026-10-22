@@ -1,0 +1,12 @@
+{
+  "evaluation_name": "itg-event-grounding-llm-vs-rules",
+  "logged_to": "Foundry project insidethegame (ais-insidethegame-alv)",
+  "studio_url": "https://ai.azure.com/resource/build/evaluation/47a19fc2-5fab-4f8c-90da-3cda3f34fc2b?wsid=/subscriptions/e3becc61-114f-4baf-b627-c0f660ba91a3/resourceGroups/rg-insidethegame/providers/Microsoft.CognitiveServices/accounts/ais-insidethegame-alv/projects/insidethegame&tid=55f4806e-88a8-4878-89e4-f314a628b34a",
+  "rows": 2901,
+  "evaluator": "code-only EventGrounding (scripts/upload_grounding_foundry.py), no model calls",
+  "aggregate_metrics": {
+    "event_grounding.pass_rate": 0.9993,
+    "event_grounding.contradiction": 0.0024
+  },
+  "note": "Aggregate over all three systems (llm, llm_with_event_check, rules); per-system rates are in evals/grounding.json."
+}
