@@ -13,7 +13,8 @@ with sync_playwright() as p:
     errs = []
     pg.on("pageerror", lambda e: errs.append(str(e)))
     pg.goto(base, wait_until="networkidle")
-    time.sleep(2.5)
+    pg.wait_for_selector("#tnext", timeout=25000)
+    time.sleep(0.8)
     pg.screenshot(path=f"{out}/{pre}-tour.png")
     for _ in range(2):
         pg.click("#tnext")

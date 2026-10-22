@@ -452,4 +452,4 @@ $("best").onclick=()=>reel("best");$("tourbtn").onclick=tour;$("pvbtn").onclick=
 $("reelx").onclick=reelExit;$("reelprev").onclick=()=>startClip(R.ci-1);$("reelnext").onclick=()=>startClip(R.ci+1);$("reelpp").onclick=()=>{R.paused=!R.paused;$("reelpp").textContent=R.paused?"▶":"⏸";};$("reelcard").onclick=recapCard;
 tog("cvd",0,()=>{applyPalette();localStorage.itgCvd=isOn("cvd")?"1":"";});$("helpbtn").onclick=()=>$("help").classList.add("on");
 if(localStorage.itgCvd){$("cvd").classList.add("on");document.body.classList.add("cvd");}
-if(!localStorage.itgTour&&!/notour/.test(location.search))setTimeout(()=>{if(meta&&TI<0&&!R.on)tour();},1200);
+if(!localStorage.itgTour&&!/notour/.test(location.search)){let tw=0;const tt=()=>{if(TI>=0||R.on||localStorage.itgTour)return;if(meta)tour();else if((tw+=400)<20000)setTimeout(tt,400);};setTimeout(tt,1200);}
