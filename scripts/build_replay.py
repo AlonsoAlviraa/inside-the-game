@@ -6,12 +6,15 @@ from insidethegame.room import localise
 
 async def main(argv):
     force = "--force" in argv
-    seeds = [int(a) for a in argv if a.isdigit()] or list(replay.SHOWCASE)
+    only = {tuple(a.split(":")) for a in argv if a.count(":") == 2}  # e.g. 7:fan:en rebuilds just that run
+    seeds = sorted({int(o[0]) for o in only}) or [int(a) for a in argv if a.isdigit()] or list(replay.SHOWCASE)
     for s in seeds:
         for m in replay.MODES:
             for l in replay.LANGS:
                 p = replay.path(s, m, l)
-                if p.exists() and not force:
+                if only and (str(s), m, l) not in only:
+                    continue
+                if p.exists() and not force and not only:
                     continue
                 t = time.time()
                 r = await replay.record(s, m, l)

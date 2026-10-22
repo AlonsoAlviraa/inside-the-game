@@ -27,11 +27,11 @@ Measured on our own 45 full-match AI runs (`scripts/measure_impact.py` → `eval
 
 | Measure | Value |
 |---|---|
-| AI cost per match (gpt-4.1-mini) | mean **$0.0105**, max $0.0168 |
+| AI cost per match (gpt-4.1-mini) | mean **$0.0111**, max $0.0168 |
 | Model calls per match | mean 38, max 54 |
-| Agent time per batch | p50 2.9 s, p95 12.4 s (the data caption shows instantly, so the AI text replaces it in place) |
+| Agent time per batch | p50 2.9 s, p95 13.8 s (the data caption shows instantly, so the AI text replaces it in place) |
 | Languages × personas | 3 × 3 |
-| Contradictions with the raw event feed | 7 flagged in 2,117 checks on 967 AI cards: 5 real (one stale-score bug, now fixed), 2 hypothetical scores (see Evaluation) |
+| Contradictions with the raw event feed | **0** in 2,155 checks on 977 AI cards, after fixing a stale-score bug the eval found (see Evaluation) |
 
 ## For judges: test it in 2 minutes
 0. **Fastest path (30 s):** a short guided tour opens on the first visit. Press **✨ Best moments** (or `B`) to watch the
@@ -255,7 +255,7 @@ reasons: `evals/results.json`; summary: `evals/summary.json`.
 
 * **Azure AI Content Safety:** 135/135 sampled lines at severity 0 in every category. While building the cache
   (1,333 cards), 5 AI rewrites were flagged at severity 2 and automatically replaced by the rules line.
-* Building all 45 replay runs cost **$0.47** of gpt-4.1-mini; Fluency is modest by design (one short broadcast line).
+* Building all 45 replay runs cost **$0.47** of gpt-4.1-mini (re-running the 7 runs that held the flagged cards, after the fix, cost $0.10); Fluency is modest by design (one short broadcast line).
 * **Foundry Agent Service:** the hosted `itg-analyst-desk` agent answered 3/3 test questions on match 42 with zero
   issues from our numbers/claims/roster verifier (`evals/foundry_agent_run.json`).
 
@@ -272,24 +272,25 @@ that uses no model. It checks each AI event card against the **raw event feed**,
 The baseline is the same room in rules mode on the same batches and cards. Results: `evals/grounding.json`. Per-card rows: `evals/grounding_rows.jsonl`.
 They were logged to the Foundry project as evaluation `itg-event-grounding-llm-vs-rules` with a code-only evaluator (`evals/grounding_foundry.json`).
 
-| System (967 cards each) | Checks | Pass rate | Outcome | Attribution | Scoreline | Minute |
+| System (977 cards each) | Checks | Pass rate | Outcome | Attribution | Scoreline | Minute |
 |---|---|---|---|---|---|---|
-| LLM (cached runs) | 2,117 | **99.67%** | 100% | 100% | 98.67% | 100% |
-| LLM + new event-consistency guard (7 cards fall back to rules) | 2,108 | **100%** | 100% | 100% | 100% | 100% |
-| Rules baseline | 1,575 | 100% | 100% | 100% | 100% | – |
+| LLM (cached runs, after the fix) | 2,155 | **100%** | 100% | 100% | 100% | 100% |
+| LLM before the fix (earlier cache) | 2,117 | 99.67% | 100% | 100% | 98.67% | 100% |
+| LLM + event-consistency guard (0 cards fall back) | 2,155 | **100%** | 100% | 100% | 100% | 100% |
+| Rules baseline | 1,594 | 100% | 100% | 100% | 100% | – |
 
-**What the eval found:** 5 of the 7 flags are real. They are the same 35' shot in match 7, written for 5 persona/language variants,
+**What the eval found (first run, before the fix):** 5 of the 7 flags are real. They are the same 35' shot in match 7, written for 5 persona/language variants,
 and each one quotes 0-1 when the goal only came at 37'. The cause was a bug in the facts we handed the agent: the batch-end score
 instead of the score at the event. The other 2 are hypothetical scores ("missing the equaliser at 2-2"), which the metric cannot tell apart from a claim. That bug is fixed (`RoomState.score_line_at`), and a new
 runtime check (`semantic.event_consistency`) now rejects a wrong scoreline or a missed shot called "scored".
-The rules baseline is perfectly grounded by construction. What the LLM adds is variety, persona and language, at a measured 0.24% real contradiction rate (5/2,117) before the fix. The new guard is conservative: hypothetical scorelines fall back to the rules line too.
+The rules baseline is perfectly grounded by construction. What the LLM adds is variety, persona and language, at a measured 0.24% real contradiction rate (5/2,117) before the fix. The new guard is conservative: hypothetical scorelines fall back to the rules line too. The 7 replay runs holding those cards were then rebuilt with the fixed code ($0.10): the eval now finds 0 contradictions.
 
 **Limits, stated honestly:**
 * The checks are pattern-based (en/es/fr). They catch contradictions, not style or insight.
 * There are no human labels.
 * The goal-word lists were tuned on these same synthetic matches.
 * The Foundry LLM-judge scores share the generator's model.
-* The cached replays were generated before the fix, so those 7 cards are still in the cache.
+* Only the 7 affected runs were rebuilt; the other 38 were generated before the fix (they had no flags).
 
 ## Responsible AI
 * **Grounding:** the agents only see facts computed from the event stream; every number must exist in those facts,
