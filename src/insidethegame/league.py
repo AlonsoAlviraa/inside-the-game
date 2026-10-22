@@ -5,11 +5,9 @@ rate blends a prior (from the fictional strength rating) with the xG rate observ
 """
 from __future__ import annotations
 import math
-from functools import lru_cache
 
 from . import insights, season
-from .generator import MatchGenerator
-from .teams import FIXTURES, LEAGUE_DAYS, _POOL, club_list, make_team, teams_for_seed
+from .teams import LEAGUE_DAYS, teams_for_seed
 
 FULL = 95  # nominal match length incl. stoppage, minutes
 

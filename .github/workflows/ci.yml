@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    env:
+      ITG_LLM_PROVIDER: mock   # no cloud calls, no secrets: the room runs its deterministic rules path
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev,agents,mcp]"
+      - name: Lint (ruff)
+        run: ruff check src tests scripts
+      - name: Tests (pytest)
+        run: pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container image (no push)
+        run: docker build -t insidethegame:ci .
+      - name: Smoke test /health
+        run: |
+          docker run -d -p 8000:8000 -e ITG_LLM_PROVIDER=mock --name itg insidethegame:ci
+          for i in $(seq 1 30); do curl -fs localhost:8000/health && exit 0; sleep 2; done
+          docker logs itg; exit 1
+
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Bicep
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null

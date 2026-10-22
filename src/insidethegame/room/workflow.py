@@ -76,6 +76,7 @@ class CommentaryRoom:
         self.render = RenderAgent(st)
         self.personalise = PersonaliseAgent(st, mk(PersonaliseAgent, 320), self.memory)
         self.errors: list[str] = []
+        self.fault: dict | None = None
         self.orchestrator = "sequential"
         self._wf = None
         if (orchestrator or os.getenv("ITG_ORCHESTRATOR", "maf")).lower() == "maf":
@@ -103,13 +104,61 @@ class CommentaryRoom:
                 pass
 
     # ------------------------------------------------------------------ steps
+    # ------------------------------------------------------------------ fault injection (chaos demo)
+    def inject_fault(self, agent: str, severity: str = "transient") -> None:
+        """Arm a one-shot failure for `agent` on the next batch. 'transient' fails once (orchestrator
+        retries); 'hard' fails twice (orchestrator degrades that agent to its deterministic rules path)."""
+        self.fault = {"agent": agent, "left": 1 if severity == "transient" else 2, "severity": severity}
+
+    def _maybe_fault(self, agent) -> None:
+        f = getattr(self, "fault", None)
+        if f and f["agent"] == agent.name and f["left"] > 0:
+            f["left"] -= 1
+            raise RuntimeError(f"injected fault in {agent.name} ({f['severity']})")
+
+    @staticmethod
+    def _snap(b: Batch) -> tuple:
+        return len(b.events), len(b.insights), len(b.candidates), len(b.explained), len(b.cards)
+
+    OWNS = {"ingest": 0, "interpret": 1, "salience": 2, "explain": 3, "render": 4}
+
+    def _restore(self, agent, b: Batch, snap: tuple) -> None:
+        """Drop partial output of a failed attempt (only the list this agent owns; branches run in parallel)."""
+        i = self.OWNS.get(agent.name)
+        if i is not None:
+            del getattr(b, ("events", "insights", "candidates", "explained", "cards")[i])[snap[i]:]
+
     async def _step(self, agent, b: Batch) -> Batch:
+        """Run one agent with a recovery policy: retry once, then degrade to the agent's rules path
+        (its LLM brain switched off for this call). The match never stops because one agent fails."""
         with telemetry.span(agent.name, b.trace, minute=self.state.minute) as entry:
-            try:
-                await agent.run(b, entry)
-            except Exception as e:  # failure isolation: the match keeps going
-                self.errors.append(f"{agent.name}: {e!r}")
-                entry["error"] = repr(e)
+            snap, attempts, faults = self._snap(b), 0, []
+            for mode in ("primary", "retry", "fallback"):
+                attempts += 1
+                brain = getattr(agent, "brain", None)
+                saved = brain.agent if (mode == "fallback" and brain is not None) else None
+                try:
+                    if mode == "fallback" and brain is not None:
+                        brain.agent = None  # deterministic rules path, no model call
+                    if mode != "fallback":
+                        self._maybe_fault(agent)
+                    await agent.run(b, entry)
+                    break
+                except Exception as e:  # failure isolation: the match keeps going
+                    faults.append(repr(e))
+                    self.errors.append(f"{agent.name}: {e!r}")
+                    self._restore(agent, b, snap)
+                finally:
+                    if saved is not None:
+                        brain.agent = saved
+            else:
+                entry["error"] = faults[-1]
+            if faults:
+                entry["fault"] = faults[0]
+                entry["attempts"] = attempts
+                entry["recovery"] = ("skipped" if "error" in entry else "retry" if attempts == 2
+                                     else "fallback:rules" if getattr(agent, "brain", None) is not None else "restart")
+            entry["out"] = dict(zip(("events", "insights", "candidates", "explained", "cards"), self._snap(b)))
         return b
 
     def _build_maf(self):

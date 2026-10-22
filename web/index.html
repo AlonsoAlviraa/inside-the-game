@@ -19,7 +19,9 @@ select{background:var(--p2);color:var(--txt);border:1px solid var(--line);border
 /* top bar */
 nav{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--p);flex-wrap:nowrap;white-space:nowrap}
 nav select{min-width:86px;flex:0 1 auto}
-@media(max-width:1400px){.views button{padding:4px 6px}.seg button{padding:3px 6px}}
+@media(max-width:1400px){.views button{padding:4px 6px}.seg button{padding:3px 6px}nav{gap:4px;padding:6px 6px}nav select{min-width:0;flex:0 0 auto}#match{width:146px;max-width:146px!important}#club,#fplayer{width:92px;max-width:92px!important}nav .icon{padding:2px 2px}.logo{font-size:.9em}.bl{display:none}.btn{padding:6px 10px}}
+html,body{overflow-x:hidden}
+#feed li.empty{display:block;grid-column:1/-1;text-align:center}
 .logo{font-weight:800;letter-spacing:-.01em;margin-right:6px}.logo b{color:var(--acc)}
 .views button{background:none;border:0;color:var(--mute);padding:4px 9px;border-radius:6px;font-weight:600}.views button.on{color:var(--txt);background:var(--p2)}
 nav .sp{flex:1}
@@ -84,6 +86,11 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
 .sugg{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0}.sugg button{background:var(--p2);border:1px solid var(--line);border-radius:99px;padding:3px 9px;font-size:.8em}
 .ask{display:flex;gap:6px}.ask input{flex:1;background:var(--p2);border:1px solid var(--line);border-radius:7px;color:var(--txt);padding:6px 8px;font:inherit}
 .pipe{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}.node{background:var(--p2);border:1px solid var(--line);border-radius:8px;padding:6px 2px;text-align:center;font-size:.75em;transition:all .25s}
+.node.fault{border-color:#f59e0b;box-shadow:0 0 12px #f59e0b66}.node.dead{border-color:#ef4444}
+.hrow{display:flex;align-items:center;gap:2px;font-size:.66em}.hrow>.ho,.hrow>.par{flex:1 1 0;min-width:0}.hrow em{color:var(--mute);font-style:normal}.par{display:flex;flex-direction:column;gap:3px}
+.ho{background:var(--p2);border:1px solid var(--line);border-radius:6px;padding:3px 2px;text-align:center;overflow:hidden;text-overflow:ellipsis}.ho b,.ho span,.ho i{display:block}.ho span{color:var(--mute)}
+.ho.fault{border-color:#f59e0b}.ho.fault i{color:#f59e0b;font-style:normal}.ho.dead{border-color:#ef4444}.ho.idle{opacity:.5}
+.chaos{margin:8px 0;padding:6px;border:1px dashed #f59e0b88;border-radius:8px;font-size:.85em}.chaos select{font-size:.9em}#chaosbtn{font-size:.9em;font-weight:700;background:#f59e0b;color:#1a1000;border:0;border-radius:6px;padding:3px 10px;cursor:pointer}#chaosbtn:disabled{opacity:.5}
 .node.run{border-color:var(--acc);box-shadow:0 0 12px #2dd4a755}.node .n{font-weight:700}.node .s{color:var(--mute);min-height:2.6em}
 .kpis{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.kpi{background:var(--p2);border-radius:8px;padding:7px}.kpi b{display:block;font-size:1.15em}.kpi span{color:var(--mute);font-size:.78em}
 .log{font:11px/1.45 ui-monospace,monospace;color:var(--mute)}.log div{border-top:1px solid var(--line);padding:3px 0}
@@ -115,8 +122,9 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
  <span class="seg" id="src" title="Replay: precomputed AI commentary (no live model calls). Live: the agents run now on Azure OpenAI."><button data-v="replay" class="on">Replay</button><button data-v="live">Live</button></span>
  <span class="sp"></span>
  <button class="icon" id="snd" title="Goal sound">🔈</button><button class="icon" id="tts" title="Read key moments aloud">🗣</button><button class="icon" id="ntf" title="Browser alerts">🔔</button><button class="icon" id="big" title="Larger text">Aa</button>
- <button class="btn ghost" id="pause" disabled>⏸</button><button class="btn" id="go">▶ Kick off</button></nav>
+ <button class="btn ghost" id="pause" title="Pause / resume" disabled>⏸</button><button class="btn" id="go" title="Kick off / restart">▶ Kick off</button></nav>
 
+<div id="netbar" role="status" hidden style="background:#7a4b00;color:#fff;padding:4px 12px;font-size:.85em;text-align:center"></div>
 <div id="bar" aria-live="polite">
  <div class="tm home"><img id="hc" alt=""><div style="min-width:0"><div class="nm" id="hn">Home</div><div class="rk" id="hr"></div></div>
   <div class="mini" style="margin-left:auto"><span id="wpl">Win probability</span><div class="mb" id="wpmini"></div></div></div>
@@ -146,7 +154,10 @@ canvas.chart{width:100%;height:180px;display:block;margin-top:8px}
   <div class="pane" id="p-compare"><div style="display:flex;gap:6px;margin-bottom:8px"><select id="pa"></select><select id="pb"></select></div><div id="cmp"></div></div>
   <div class="pane" id="p-preview"><div id="prev">Loading…</div></div>
   <div class="pane" id="p-ask"><p class="cap">Answers use only events up to now and are fact-checked.</p><div id="chat"></div><div class="sugg" id="sugg"></div><form class="ask" id="askf"><input id="q" maxlength="300" placeholder="Ask about this match…" autocomplete="off"><button class="btn">Ask</button></form></div>
-  <div class="pane" id="p-agents"><p class="cap">Five agents (Microsoft Agent Framework) process each batch of events. ✦ in the feed = line written by the AI room.</p><div class="pipe" id="pipe"></div><div class="kpis" id="kpis"></div><h3>Trace</h3><div class="log" id="trace"></div></div>
+  <div class="pane" id="p-agents"><p class="cap">Five agents (Microsoft Agent Framework) process each batch of events. ✦ in the feed = line written by the AI room.</p><div class="pipe" id="pipe"></div><h3>Agent handoffs</h3><div id="handoff"><p class="cap">Starts with the first batch.</p></div>
+  <div class="chaos"><b>Chaos test</b> <select id="chaosag" aria-label="Agent to break"><option value="explain">Explain</option><option value="interpret">Interpret</option><option value="salience">Salience</option><option value="render">Render</option><option value="personalise">Personalise</option><option value="ingest">Ingest</option></select>
+  <select id="chaossev" aria-label="Fault severity"><option value="transient">fails once → retry</option><option value="hard">fails twice → fallback</option></select><button id="chaosbtn">💥 Break it</button><div class="cap" id="chaosmsg">Makes one agent crash; the orchestrator retries, then degrades that agent to its rules path.</div></div>
+  <div class="kpis" id="kpis"></div><h3>Trace (OpenTelemetry spans)</h3><div class="log" id="trace"></div></div>
  </div>
 </div>
 

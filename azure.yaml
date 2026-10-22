@@ -1,0 +1,14 @@
+# Azure Developer CLI (azd) definition. `azd up` would provision infra/main.bicep and deploy the container.
+# Not used for the live hackathon deployment, which already exists in rg-insidethegame.
+name: inside-the-game
+infra:
+  provider: bicep
+  path: infra
+  module: main
+services:
+  web:
+    project: .
+    language: python
+    host: containerapp
+    docker:
+      path: ./Dockerfile

@@ -137,6 +137,35 @@ def key_moments(evs: list[dict], meta: dict, limit: int = 25) -> list[dict]:
     return sorted(out[:limit], key=lambda m: m["event_id"])
 
 
+def ball_metrics(evs: list[dict], meta: dict) -> dict:
+    """Challenge metrics from synthetic coordinates and timestamps: pass difficulty (distance, pressure,
+    forward progress), ball speed of passes (length / flight time) and shot speed, per team, plus records."""
+    def rec(e, key):
+        return {"player": e.get("player"), "team": e.get("team"), "minute": e["minute"], "value": e.get(key),
+                "success": e.get("success"), "length_m": e.get("length_m"), "distance_m": e.get("distance_m")}
+    out = {}
+    passes_all = [e for e in evs if e["type"] == "pass" and e.get("speed_kmh") is not None]
+    shots_all = [e for e in evs if e["type"] in ("shot", "goal") and e.get("speed_kmh") is not None]
+    for side in ("home", "away"):
+        tid = meta[side]["id"]
+        ps = [e for e in passes_all if e["team"] == tid]
+        sh = [e for e in shots_all if e["team"] == tid]
+        done = [e for e in ps if e.get("success")]
+        hard = [e for e in ps if e.get("difficulty", 0) >= 0.6]
+        out[tid] = {
+            "avg_pass_difficulty": round(sum(e["difficulty"] for e in ps) / len(ps), 2) if ps else 0,
+            "hard_passes": len(hard), "hard_pass_completion_pct": round(100 * sum(1 for e in hard if e.get("success")) / len(hard)) if hard else 0,
+            "avg_pass_speed_kmh": round(sum(e["speed_kmh"] for e in ps) / len(ps), 1) if ps else 0,
+            "avg_shot_speed_kmh": round(sum(e["speed_kmh"] for e in sh) / len(sh), 1) if sh else 0,
+            "ball_travel_km": round(sum(e.get("length_m", 0) for e in ps) / 1000, 2),
+            "hardest_completed_pass": rec(max(done, key=lambda e: e["difficulty"]), "difficulty") if done else None,
+        }
+    return {"teams": out,
+            "fastest_shot": rec(max(shots_all, key=lambda e: e["speed_kmh"]), "speed_kmh") if shots_all else None,
+            "fastest_pass": rec(max(passes_all, key=lambda e: e["speed_kmh"]), "speed_kmh") if passes_all else None,
+            "method": "difficulty = f(distance, pressure, forward metres) in [0,1]; speed = distance / flight time (km/h)"}
+
+
 def report(seed: int, up_to_minute: int = 200) -> dict:
     evs = _upto(seed, up_to_minute)
     meta = evs[0]["meta"]
@@ -150,7 +179,8 @@ def report(seed: int, up_to_minute: int = 200) -> dict:
             "home": {k: meta["home"][k] for k in ("id", "name", "short", "color")},
             "away": {k: meta["away"][k] for k in ("id", "name", "short", "color")},
             "score": score, "teams": team_stats(evs, meta), "players": player_stats(evs, meta),
-            "momentum": momentum(evs, meta), "key_moments": key_moments(evs, meta)}
+            "momentum": momentum(evs, meta), "key_moments": key_moments(evs, meta),
+            "ball": ball_metrics(evs, meta)}
 
 
 def report_markdown(r: dict, recap: str | None = None) -> str:

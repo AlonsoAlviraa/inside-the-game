@@ -19,6 +19,12 @@ function fresh(){return{buf:[],T:0,lastRecv:0,applied:new Map(),score:{},clockMi
  trail:[],shots:[],marks:[],items:new Map(),pending:new Map(),pendMin:[],poss:null,ballX:52.5,ballY:34,fx:52.5,fy:34,tx:52.5,ty:34,t0:0,dur:1,
  recentPress:[],control:null,cards:0,llm:0,rejected:0,batches:0,lat:0,usage:null,lastRep:-9,wp:null,report:null};}
 S=fresh();
+// ------------------------------------------------------------------ resilient fetch (retries cold starts / transient 5xx)
+async function J(url,tries=4){let last;for(let i=0;i<tries;i++){try{const r=await fetch(url);if(r.ok)return await r.json();last=new Error(r.status+" "+url);if(r.status<500&&r.status!==429)break;}catch(e){last=e;}
+ netState(true);await new Promise(z=>setTimeout(z,400*2**i));}netState(false,true);throw last;}
+function netState(retrying,failed){const b=$("netbar");if(!b)return;b.hidden=!(retrying||failed);b.textContent=failed?"Connection problem: some panels could not load. They retry automatically; press Restart if needed.":"Reconnecting to the server…";if(!retrying&&!failed)b.hidden=true;}
+window.addEventListener("unhandledrejection",e=>{console.warn("handled:",e.reason);e.preventDefault();});
+window.addEventListener("error",e=>{console.warn("handled:",e.message);});
 // ------------------------------------------------------------------ controls & views
 document.querySelectorAll(".seg[id]").forEach(s=>s.onclick=e=>{const b=e.target.closest("button");if(!b||!(s.id in opt))return;
  s.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));opt[s.id]=b.dataset.v;if(s.id==="lang")sugg();});
@@ -126,7 +132,7 @@ function nowLine(ev){if(!meta)return;const t=S.poss&&tm(S.poss);let s="";
  const recent=S.recentPress.filter(p=>S.T-p.t<90);S.recentPress=recent;const pr={};recent.forEach(p=>pr[p.team]=(pr[p.team]||0)+1);
  const presser=Object.keys(pr).sort((a,b)=>pr[b]-pr[a])[0];
  if(["goal"].includes(ev.type))s=`${ev.player} has just scored for ${tm(ev.team).name}. ${leadText()}`;
- else if(ev.type==="shot")s=`${ev.player} shoots for ${tm(ev.team).name} — ${ev.outcome.replace("_"," ")}.`;
+ else if(ev.type==="shot")s=`${ev.player} shoots for ${tm(ev.team).name} — ${ev.outcome.replace("_"," ")}${ev.speed_kmh?` (${Math.round(ev.speed_kmh)} km/h from ${Math.round(ev.distance_m)} m)`:""}.`;
  else if(ev.type==="period_end")s=ev.period===1?`Half-time. ${leadText()}`:`Full-time. ${leadText()}`;
  else if(ev.type==="card")s=`${ev.player} (${tm(ev.team).name}) is booked${ev.card!=="yellow"?" and sent off":""}.`;
  else if(t){const x=S.lastZone??50,zone=x>70?"in the attacking third":x>35?"in midfield":"building from the back";
@@ -148,7 +154,7 @@ function onCards(d){S.batches++;if(d.replay)S.replay=true;d.cards.forEach(c=>{co
   if(m){if(S.applied.has(+m[1])||S.items.has(c.id)){if(S.items.has(c.id))upgrade(c);else addCardItem(c);}else S.pending.set(c.id,c);}
   else if(elapsedMin(c.facts?.period||1,c.minute)<=S.elapsed&&(c.facts?.period||1)<=S.period)addCardItem(c);else S.pendMin.push(c);});
  d.trace.forEach(t=>{S.lat+=t.ms||0;if(Array.isArray(t.factcheck_rejected))S.rejected+=t.factcheck_rejected.length;});
- S.usage=d.usage;S.control=d.index;animatePipe(d.trace);traceLog(d);kpis();
+ S.usage=d.usage;S.control=d.index;if(!(S.chaosPin&&performance.now()<S.chaosPin))animatePipe(d.trace);handoffs(d);traceLog(d);kpis();
  if(d.index?.control&&meta){const h=d.index.control[H().id],a=d.index.control[A().id],w=100*h/((h+a)||1);$("ctrl").style.width=w+"%";
   $("ctrlcap").textContent=Math.abs(w-50)<6?"Control: even":`Control: ${(w>50?H():A()).short} on top`;}}
 function pitchCap(){}
@@ -167,23 +173,39 @@ function shareItem(li){const c=$("share"),g=c.getContext("2d"),h=H(),a=A();g.fil
  const l=document.createElement("a");l.download=`moment-${li.dataset.ev||"card"}.png`;l.href=c.toDataURL("image/png");l.click();}
 function wrap(g,t,x,y,w,lh){let line="";t.split(" ").forEach(word=>{if(g.measureText(line+word).width>w){g.fillText(line,x,y);y+=lh;line="";}line+=word+" ";});g.fillText(line,x,y);}
 // ------------------------------------------------------------------ AI room panel
+const HAND=[["ingest","Ingest","events"],["interpret","Interpret","insights"],["salience","Salience","candidates"],["explain","Explain","explained"],["render","Render","cards"],["personalise","Personalise","cards"]];
+function handoffs(d){const el=$("handoff");if(!el)return;if(d.chaos)S.chaosPin=performance.now()+20000;else if(S.chaosPin&&performance.now()<S.chaosPin)return;const by={};(d.trace||[]).forEach(t=>by[t.agent]=t);
+ const cell=([k,n,what])=>{const t=by[k];if(!t)return`<div class="ho idle"><b>${n}</b><span>—</span></div>`;const o=t.out?t.out[what]:null;
+  const st=t.recovery?(t.recovery==="skipped"?"dead":"fault"):"ok";return`<div class="ho ${st}" title="${esc(t.fault||"")}"><b>${n}</b><span>${o==null?`${t.ms} ms`:`${o} ${what}`}</span>${t.recovery?`<i>💥 → ${t.recovery} (${t.attempts}×)</i>`:""}</div>`;};
+ el.innerHTML=`<div class="hrow">${cell(HAND[0])}<em>→</em><div class="par">${cell(HAND[1])}${cell(HAND[2])}</div><em>→</em>${cell(HAND[3])}<em>→</em>${cell(HAND[4])}<em>→</em>${cell(HAND[5])}</div>
+ <p class="cap">${d.chaos?`💥 Fault injected in <b>${esc(d.chaos)}</b> at ${d.minute}'. The orchestrator ${Object.values(by).some(t=>t.recovery==="skipped")?"skipped it and the batch still reached the viewer":"recovered and the batch still reached the viewer"}: ${(d.cards||[]).length} card(s) delivered.`:`Batch at ${d.minute}': what each agent handed to the next.`}</p>`;}
+async function chaos(){const agent=$("chaosag").value,severity=$("chaossev").value,b=$("chaosbtn");b.disabled=true;
+ try{const live=S.running&&!S.ended&&!S.replay&&opt.src==="live";const r=await fetch("/api/chaos",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({agent,severity,seed,minute:Math.max(5,Math.min(90,S.clockMin||30)),mode:opt.mode,lang:opt.lang,sid:live?S.sid:null})}).then(r=>r.json());
+  if(r.live){$("chaosmsg").textContent=`Armed: ${agent} will fail on the next live batch. Watch the trace.`;}
+  else{const d={trace:r.trace,minute:r.minute,report:(r.trace.find(t=>t.agent==="ingest")||{}).report||{},cards:r.cards,chaos:agent};animatePipe(r.trace);handoffs(d);traceLog(d);
+   $("chaosmsg").textContent=`Sandbox room (rules mode, no model cost) replayed up to ${r.minute}' and broke ${agent} (${severity}).`;}}
+ catch(e){$("chaosmsg").textContent="Chaos request failed: "+e;}finally{b.disabled=false;}}
 function pipe(){$("pipe").innerHTML=AG.map(([k,i,n,d])=>`<div class="node" id="n-${k}"><div style="font-size:26px">${i}</div><div class="n">${n}</div><div class="d">${d}</div><div class="s" id="s-${k}">waiting</div></div>`).join("");}
 function animatePipe(tr){let delay=0;AG.forEach(([k])=>{const t=tr.filter(x=>x.agent===k||(k==="interpret"&&x.agent==="salience"));if(!t.length)return;
  const ms=t.reduce((a,b)=>a+(b.ms||0),0),ti=t.reduce((a,b)=>a+(b.tokens_in||0),0),to=t.reduce((a,b)=>a+(b.tokens_out||0),0);
- setTimeout(()=>{$("n-"+k).classList.add("run");$("s-"+k).innerHTML=`${ms} ms<br>${ti?`${ti}→${to} tokens`:"rules (no LLM)"}`;setTimeout(()=>$("n-"+k)?.classList.remove("run"),450);},delay);delay+=280;});}
-function traceLog(d){const r=d.report||{},div=document.createElement("div");div.textContent=`${d.minute}' · ${r.accepted??0}/${r.received??0} events · `+d.trace.map(t=>`${t.agent} ${t.ms}ms${t.tokens_in?` ${t.tokens_in}→${t.tokens_out}tok`:""}`).join(" | ");
+ const f=t.find(x=>x.recovery);setTimeout(()=>{const n=$("n-"+k);n.classList.remove("fault","dead");if(f)n.classList.add(f.recovery==="skipped"?"dead":"fault");n.classList.add("run");$("s-"+k).innerHTML=f?`💥 failed → ${f.recovery==="retry"?"retried ✓":f.recovery==="skipped"?"skipped":f.recovery==="restart"?"restarted ✓":"rules fallback ✓"}<br>${ms} ms`:`${ms} ms<br>${ti?`${ti}→${to} tokens`:"rules (no LLM)"}`;setTimeout(()=>$("n-"+k)?.classList.remove("run"),450);},delay);delay+=280;});}
+function traceLog(d){const r=d.report||{},div=document.createElement("div");div.textContent=`${d.chaos?"💥 CHAOS · ":""}${d.minute}' · ${r.accepted??0}/${r.received??0} events · `+d.trace.map(t=>`${t.agent} ${t.ms}ms${t.tokens_in?` ${t.tokens_in}→${t.tokens_out}tok`:""}${t.recovery?` [fault → ${t.recovery}, ${t.attempts} attempts]`:""}`).join(" | ");
  $("trace").prepend(div);while($("trace").children.length>40)$("trace").lastChild.remove();}
 function kpis(){const u=S.usage||{calls:0,input_tokens:0,output_tokens:0,usd:0};const proj=S.elapsed?u.usd/S.elapsed*90:0;
  $("kpis").innerHTML=[[`$${(+u.usd).toFixed(4)}`,"LLM cost so far"],[`$${proj.toFixed(3)}`,"projected for the match"],[u.calls,"LLM calls"],[(u.input_tokens+u.output_tokens).toLocaleString(),"tokens used"],
  [S.cards,"commentary lines"],[S.llm,"upgraded by AI"],[S.rejected,"AI rewrites rejected by checks"],[S.batches?Math.round(S.lat/S.batches)+" ms":"–","AI room latency per batch"]].map(([b,s])=>`<div class="kpi"><b>${b}</b><span>${s}</span></div>`).join("")+(S.replay?`<div class="kpi"><b>0</b><span>live LLM calls now (replay of precomputed, checked AI commentary)</span></div>`:"");}
 // ------------------------------------------------------------------ data panels
 function refresh(force){if(!meta)return;S.lastRep=S.elapsed;const m=S.running?Math.max(0,S.period===1?Math.min(S.clockMin,45):S.clockMin):200;
- fetch(`/api/formation?seed=${seed}&minute=${S.running?Math.max(m,10):200}`).then(r=>r.json()).then(f=>{S.dots=[];Object.entries(f.teams).forEach(([tid,t])=>t.players.forEach(p=>{const[x,y]=p.avg||p.slot;S.dots.push({id:p.id,team:tid,x,y,n:p.number});}));});
- fetch(`/api/report?seed=${seed}&minute=${m}`).then(r=>r.json()).then(r=>{S.report=r;renderStats(r);renderHL(r);drawMomentum(r);if($("p-compare").classList.contains("on"))loadCompare();});drawWin();}
+ J(`/api/formation?seed=${seed}&minute=${S.running?Math.max(m,10):200}`).then(f=>{S.dots=[];Object.entries(f.teams).forEach(([tid,t])=>t.players.forEach(p=>{const[x,y]=p.avg||p.slot;S.dots.push({id:p.id,team:tid,x,y,n:p.number});}));});
+ J(`/api/report?seed=${seed}&minute=${m}`).then(r=>{S.report=r;renderStats(r);renderHL(r);drawMomentum(r);if($("p-compare").classList.contains("on"))loadCompare();});drawWin();}
 function renderStats(r){const h=r.home,a=r.away,th=r.teams[h.id],ta=r.teams[a.id];
  const rows=[["Goals","goals"],["Shots","shots"],["Shots on target","on_target"],["Chance quality (xG)","xg"],["Threat from passes (xT)","xt"],["Passes","passes"],["Pass completion %","pass_completion_pct"],["Forward passes (10 m+)","progressive_passes"],["Pressures","pressures"],["Fouls","fouls"],["Yellow cards","yellow_cards"],["Red cards","red_cards"]];
  $("tstats").innerHTML=`<div class="sbar"><div class="l"><b style="color:${h.color}">${esc(h.name)}</b><span>${r.finished?"Full-time":"up to "+r.minute+"'"}</span><b style="color:${a.color}">${esc(a.name)}</b></div></div>`+rows.map(([l,k])=>{const x=+th[k],y=+ta[k],s=Math.abs(x)+Math.abs(y)||1;
   return `<div class="sbar"><div class="l"><b>${x}</b><span>${l}</span><b>${y}</b></div><div class="t"><div style="width:${100*Math.abs(x)/s}%;background:${h.color}"></div><div style="width:${100*Math.abs(y)/s}%;background:${a.color}"></div></div></div>`;}).join("");
+ const B=r.ball;if(B&&B.teams){const bh=B.teams[h.id],ba=B.teams[a.id],br=[["Avg pass difficulty (0–1)","avg_pass_difficulty"],["Hard passes (difficulty ≥ 0.6)","hard_passes"],["Hard-pass completion %","hard_pass_completion_pct"],["Avg pass speed (km/h)","avg_pass_speed_kmh"],["Avg shot speed (km/h)","avg_shot_speed_kmh"],["Ball travel by passes (km)","ball_travel_km"]];
+  const who=x=>x?`${esc(x.player)} ${x.minute}'`:"—";
+  $("tstats").innerHTML+=`<h3 style="margin:8px 0 2px">Ball &amp; pass intelligence</h3>`+br.map(([l,k])=>{const x=+bh[k],y=+ba[k],s=x+y||1;return `<div class="sbar"><div class="l"><b>${x}</b><span>${l}</span><b>${y}</b></div><div class="t"><div style="width:${100*x/s}%;background:${h.color}"></div><div style="width:${100*y/s}%;background:${a.color}"></div></div></div>`;}).join("")+
+  `<p class="cap" id="ballrec">⚡ Fastest shot: <b>${B.fastest_shot?B.fastest_shot.value+" km/h":"—"}</b> ${who(B.fastest_shot)} · Fastest pass: <b>${B.fastest_pass?B.fastest_pass.value+" km/h":"—"}</b> ${who(B.fastest_pass)} · Hardest completed pass: ${[bh,ba].map(t=>t.hardest_completed_pass?`<b>${t.hardest_completed_pass.value}</b> ${who(t.hardest_completed_pass)}`:"—").join(" / ")}<br><span title="${esc(B.method)}">Computed from synthetic x/y coordinates and timestamps.</span></p>`;}
  $("pstats").innerHTML=`<table><tr><th>Player</th><th>Team</th><th>Impact</th><th>Goals</th><th>xG</th><th>xT</th><th>Pass %</th></tr>`+r.players.slice(0,12).map(p=>{const t=p.team===h.id?h:a;
   return `<tr><td>${esc(p.name)}</td><td><span style="color:${t.color}">●</span> ${esc(t.short)}</td><td><b>${p.impact}</b></td><td>${p.goals}</td><td>${p.xg}</td><td>${p.xt}</td><td>${p.pass_completion_pct}</td></tr>`;}).join("")+"</table>";}
 function renderHL(r){const km=r.key_moments;if(!km.length){$("hls").className="empty";$("hls").textContent="No highlights yet.";return;}$("hls").className="";
@@ -198,7 +220,7 @@ function drawMomentum(r){const c=$("mom"),g=c.getContext("2d"),W=c.width,Hh=c.he
  r.key_moments.filter(k=>k.kind==="goal").forEach(k=>{const i=Math.max(0,ms.findIndex((m,j)=>j===ms.length-1||ms[j+1].from_minute>k.minute));g.font="24px system-ui";g.fillText("⚽",60+i*bw,k.team===h.id?24:Hh-4);});
  const last=ms.slice(-2),sh=last.reduce((s,m)=>s+m[h.id],0),sa=last.reduce((s,m)=>s+m[a.id],0);
  $("momcap").textContent=!last.length?"—":sh+sa<.03?"Quiet spell: neither side is creating much danger.":sh>sa*1.6?`${h.name} on top: they are creating most of the danger right now.`:sa>sh*1.6?`${a.name} on top: they are creating most of the danger right now.`:"End-to-end: both sides are creating danger.";}
-async function drawWin(){if(!meta)return;if(!S.wp||S.wp.seed!==seed)S.wp={seed,series:(await fetch(`/api/winprob?seed=${seed}`).then(r=>r.json())).series};
+async function drawWin(){if(!meta)return;if(!S.wp||S.wp.seed!==seed)S.wp={seed,series:(await J(`/api/winprob?seed=${seed}`)).series};
  const ser=S.wp.series,upto=S.running?S.elapsed:(S.ended?999:0),pts=ser.filter(p=>p.final?upto>=999||(!S.running&&S.ended):p.minute<=upto);const cur=pts[pts.length-1]||ser[0];
  const h=H(),a=A();$("wpmini").innerHTML=`<div style="width:${cur.home*100}%;background:${h.color}"></div><div style="width:${cur.draw*100}%;background:#5b6577"></div><div style="width:${cur.away*100}%;background:${a.color}"></div>`;$("wpl").textContent=`Win ${h.short} ${Math.round(cur.home*100)}% · D ${Math.round(cur.draw*100)}% · ${a.short} ${Math.round(cur.away*100)}%`;$("probbar").innerHTML=[[h.short+" win",cur.home,h.color],["Draw",cur.draw,"#4b5568"],[a.short+" win",cur.away,a.color]].map(([l,p,c])=>`<div style="width:${p*100}%;background:${c}">${p>.08?`${l} ${Math.round(p*100)}%`:""}</div>`).join("");
  const c=$("wpc"),g=c.getContext("2d"),W=c.width,Hh=c.height;g.clearRect(0,0,W,Hh);g.strokeStyle="#ffffff25";g.font="16px system-ui";g.fillStyle="#9fb0c8";
@@ -207,13 +229,20 @@ async function drawWin(){if(!meta)return;if(!S.wp||S.wp.seed!==seed)S.wp={seed,s
  [["home",h.color],["draw","#9fb0c8"],["away",a.color]].forEach(([k,cl])=>{g.strokeStyle=cl;g.lineWidth=4;g.beginPath();pts.filter(p=>!p.final).forEach((p,i)=>{const x=50+(W-60)*p.minute/91,y=Hh-20-(Hh-40)*p[k];i?g.lineTo(x,y):g.moveTo(x,y);});g.stroke();});}
 let tacTeam=null;async function loadTactics(){if(!meta)return;tacTeam=tacTeam&&tm(tacTeam)?.id===tacTeam?tacTeam:H().id;
  $("tteam").innerHTML=[H(),A()].map(t=>`<button data-v="${t.id}" class="${t.id===tacTeam?"on":""}">${esc(t.name)}</button>`).join("");$("tteam").onclick=e=>{const b=e.target.closest("button");if(b){tacTeam=b.dataset.v;loadTactics();}};
- const f=await fetch(`/api/formation?seed=${seed}&minute=${S.running?S.clockMin:200}`).then(r=>r.json()),c=$("tac").getContext("2d"),t=tm(tacTeam);drawPitch(c);
+ const f=await J(`/api/formation?seed=${seed}&minute=${S.running?S.clockMin:200}`),c=$("tac").getContext("2d"),t=tm(tacTeam);drawPitch(c);
  f.teams[tacTeam].players.forEach(p=>{const[sx,sy]=[p.slot[0]*10,p.slot[1]*10];c.strokeStyle="#ffffff90";c.lineWidth=3;c.setLineDash([6,6]);c.beginPath();c.arc(sx,sy,24,0,7);c.stroke();c.setLineDash([]);
   if(p.avg){const[ax,ay]=[p.avg[0]*10,p.avg[1]*10];c.strokeStyle="#ffffff60";c.beginPath();c.moveTo(sx,sy);c.lineTo(ax,ay);c.stroke();c.fillStyle=t.color;c.strokeStyle="#fff";c.beginPath();c.arc(ax,ay,22,0,7);c.fill();c.stroke();
-   c.fillStyle="#fff";c.font="800 20px system-ui";c.textAlign="center";c.fillText(p.number,ax,ay+7);c.font="600 17px system-ui";c.fillText(p.name.split(" ")[1]||p.name,ax,ay+44);c.textAlign="start";}});}
+   c.fillStyle="#fff";c.font="800 22px system-ui";c.textAlign="center";c.fillText(p.number,ax,ay+8);c.textAlign="start";}});
+ // labels last, with collision avoidance: try below / above / right / left of the dot, skip if every spot overlaps
+ const boxes=[],dots=f.teams[tacTeam].players.filter(p=>p.avg).map(p=>[p.avg[0]*10,p.avg[1]*10]);c.font="700 30px system-ui";
+ const hit=(a,b)=>a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h;
+ f.teams[tacTeam].players.filter(p=>p.avg).forEach(p=>{const[ax,ay]=[p.avg[0]*10,p.avg[1]*10],txt=p.name.split(" ").slice(-1)[0],w=c.measureText(txt).width+12,h=36;
+  const spots=[[ax-w/2,ay+26],[ax-w/2,ay-26-h],[ax+26,ay-h/2],[ax-26-w,ay-h/2]];
+  for(const[x,y]of spots){const bx={x,y,w,h};if(x<0||x+w>1050||y<0||y+h>680)continue;if(boxes.some(o=>hit(o,bx))||dots.some(([dx,dy])=>hit(bx,{x:dx-22,y:dy-22,w:44,h:44})))continue;
+   boxes.push(bx);c.fillStyle="#0b1220cc";c.beginPath();c.roundRect(x,y,w,h,8);c.fill();c.fillStyle="#fff";c.fillText(txt,x+6,y+27);break;}});}
 async function loadCompare(){if(!meta)return;const pl=[...H().players.slice(0,11).map(p=>[p,H()]),...A().players.slice(0,11).map(p=>[p,A()])];
  if($("pa").options.length!==pl.length){[$("pa"),$("pb")].forEach((s,j)=>{s.innerHTML=pl.map(([p,t])=>`<option value="${p.id}">${esc(p.name)} (${t.short}, ${p.position})</option>`).join("");});$("pa").value=H().players[9].id;$("pb").value=A().players[9].id;$("pa").onchange=$("pb").onchange=loadCompare;}
- const r=await fetch(`/api/compare?seed=${seed}&a=${$("pa").value}&b=${$("pb").value}&minute=${S.running?S.clockMin:200}`).then(r=>r.json());const x=r.a||{},y=r.b||{};
+ const r=await J(`/api/compare?seed=${seed}&a=${$("pa").value}&b=${$("pb").value}&minute=${S.running?S.clockMin:200}`);const x=r.a||{},y=r.b||{};
  const rows=[["Impact (goals+xG+xT)","impact"],["Goals","goals"],["Shots","shots"],["Chance quality (xG)","xg"],["Threat from passes (xT)","xt"],["Passes","passes"],["Pass completion %","pass_completion_pct"],["Fouls","fouls"]];
  $("cmp").innerHTML=`<div class="sbar"><div class="l"><b>${esc($("pa").selectedOptions[0].text)}</b><b>${esc($("pb").selectedOptions[0].text)}</b></div></div>`+rows.map(([l,k])=>{const a=+(x[k]||0),b=+(y[k]||0),s=Math.abs(a)+Math.abs(b)||1;
   return `<div class="sbar"><div class="l"><b>${a}</b><span>${l}</span><b>${b}</b></div><div class="t"><div style="width:${100*Math.abs(a)/s}%;background:var(--acc)"></div><div style="width:${100*Math.abs(b)/s}%;background:var(--acc2)"></div></div></div>`;}).join("")+(!r.a&&!r.b?'<p class="cap">No actions yet for these players.</p>':"");}
@@ -233,29 +262,29 @@ function setMeta(m){meta=m;[m.home,m.away].forEach(t=>t.players.forEach(p=>NUMS[
  const fp=$("fplayer");fp.length=1;[h,a].forEach(t=>t.players.forEach(p=>fp.add(new Option(`${p.name} (${t.short})`,p.id))));}
 function resetUI(){$("feed").innerHTML='<li class="empty">Commentary starts at kick-off.</li>';$("trace").innerHTML="";$("timeline").querySelectorAll(".tl").forEach(x=>x.remove());
  $("prog").style.width="0";$("head").style.left="0";$("score").textContent="0 – 0";$("clock").textContent="0'";$("period").textContent="Pre-match";$("live").hidden=true;pipe();kpis();}
-async function loadMatch(){if(es)es.close();S=fresh();resetUI();const j=await fetch(`/api/match?seed=${seed}&meta_only=true`).then(r=>r.json());setMeta(j.events[0].meta);
+async function loadMatch(){if(es)es.close();S=fresh();resetUI();const j=await J(`/api/match?seed=${seed}&meta_only=true`);setMeta(j.events[0].meta);
  S.score={[meta.home.id]:0,[meta.away.id]:0};loadPreview();refresh();$("nowt").textContent=`${meta.home.name} v ${meta.away.name} at ${j.events[0].meta.venue}. Press Kick off to start.`;}
-function kick(){if(es)es.close();const keep=meta;S=fresh();resetUI();S.score={[keep.home.id]:0,[keep.away.id]:0};S.running=true;$("live").hidden=false;$("go").textContent="↻ Restart";$("pause").disabled=false;$("pause").textContent="⏸ Pause";
- tab("feed");$("buffer").classList.add("on");const q=new URLSearchParams({seed,speed:+opt.speed*1.6,batch_s:150,mode:opt.mode,lang:opt.lang,club:$("club").value,player:$("fplayer").value,replay:opt.src==="replay"?"true":"false",viewer});
+function kick(){if(es)es.close();const keep=meta;S=fresh();resetUI();S.score={[keep.home.id]:0,[keep.away.id]:0};S.running=true;$("live").hidden=false;$("go").innerHTML='↻<span class="bl"> Restart</span>';$("pause").disabled=false;$("pause").innerHTML='⏸<span class="bl"> Pause</span>';
+ tab("feed");$("buffer").classList.add("on");const q=new URLSearchParams({seed,speed:+opt.speed*1.6,batch_s:150,mode:opt.mode,lang:opt.lang,club:$("club").value,player:$("fplayer").value,replay:opt.src==="replay"?"true":"false",viewer,sid:(S.sid=viewer+"-"+Date.now().toString(36))});
  es=new EventSource("/api/stream?"+q);
  es.addEventListener("tick",m=>{const ev=JSON.parse(m.data).event;S.buf.push(ev);S.lastRecv=ev.t;if(ev.type==="match_end")S.ended=true;});
  es.addEventListener("cards",m=>onCards(JSON.parse(m.data)));
  es.addEventListener("end",()=>{es.close();S.ended=true;});
- es.onerror=()=>{if(es.readyState===2)S.ended=true;};}
+ es.onerror=()=>{if(es.readyState===2){S.ended=true;if(!S.buf.length&&!S.applied.size)netState(false,true);}};}
 function finish(){$("live").hidden=true;$("pause").disabled=true;S.pending.forEach(c=>addCardItem(c));S.pendMin.forEach(addCardItem);S.pending.clear();S.pendMin=[];refresh(true);drawWin();fullTime();}
-$("pause").onclick=()=>{S.paused=!S.paused;$("pause").textContent=S.paused?"▶ Resume":"⏸ Pause";};
+$("pause").onclick=()=>{S.paused=!S.paused;$("pause").textContent=S.paused?'▶<span class="bl"> Resume</span>':'⏸<span class="bl"> Pause</span>';};
 $("go").onclick=kick;
 $("match").onchange=()=>{seed=+$("match").value;S.wp=null;loadMatch();};
 async function fullTime(){$("ftbody").innerHTML="<p>The agents are writing the full-time report…</p>";$("ft").classList.add("on");
- const r=await fetch(`/api/report?seed=${seed}&recap=true&lang=${opt.lang}`).then(r=>r.json()),h=r.home,a=r.away;
+ const r=await J(`/api/report?seed=${seed}&recap=true&lang=${opt.lang}`),h=r.home,a=r.away;
  $("dl").href=`/api/report?seed=${seed}&format=md&recap=true&lang=${opt.lang}`;
  $("ftbody").innerHTML=`<span class="chip">Full-time report · synthetic match</span><h2 style="font-size:2em;margin:12px 0">${esc(h.name)} ${r.score[h.id]} – ${r.score[a.id]} ${esc(a.name)}</h2>
  <p style="font-size:1.1em">${esc(r.recap.text)}</p><p><span class="chip ${r.recap.source==="llm"?"ok":""}">${r.recap.source==="llm"?"AI recap ✓ passed numbers, claims and player checks":"rules recap"}</span></p>
  <h3>Key moments</h3>${r.key_moments.filter(k=>k.importance>=4).map(k=>`<div class="hl"><span class="ic">${ICON[k.kind]||"•"}</span><div>${esc(k.label)}</div><span class="mm">${k.minute}'</span></div>`).join("")}`;}
-fetch("/api/matches").then(r=>r.json()).then(j=>{fixtures=j.matches;const groups={};fixtures.forEach(f=>{const g=f.matchday?`Matchday ${f.matchday}`:"Showcase friendlies";(groups[g]=groups[g]||[]).push(f);});
+J("/api/matches").then(j=>{fixtures=j.matches;const groups={};fixtures.forEach(f=>{const g=f.matchday?`Matchday ${f.matchday}`:"Showcase friendlies";(groups[g]=groups[g]||[]).push(f);});
  $("match").innerHTML=Object.entries(groups).map(([g,fs])=>`<optgroup label="${g}">${fs.map(f=>`<option value="${f.seed}">${esc(f.home)} v ${esc(f.away)}</option>`).join("")}</optgroup>`).join("");$("match").value="7";seed=7;loadMatch();});
 // ------------------------------------------------------------------ pre-match comparison (league matches before this fixture)
-async function loadPreview(){const p=await fetch(`/api/preview?seed=${seed}`).then(r=>r.json());const h=H(),a=A(),hs=p.home,as=p.away,pr=p.pre_match_probability;
+async function loadPreview(){const s0=seed;const p=await J(`/api/preview?seed=${seed}`);if(s0!==seed||!meta||!p||!p.home)return;const h=H(),a=A(),hs=p.home,as=p.away,pr=p.pre_match_probability;
  const ord=n=>n+(["th","st","nd","rd"][(n%100>10&&n%100<14)||n%10>3?0:n%10]);
  $("hr").textContent=hs.table?`${ord(hs.table.position)} · ${hs.table.points} pts`:"";$("ar").textContent=as.table?`${ord(as.table.position)} · ${as.table.points} pts`:"";
  const form=t=>t.table?`<span class="form">${t.table.form.map(f=>`<b class="${f}">${f}</b>`).join("")}</span>`:"–";
@@ -280,7 +309,7 @@ async function loadPreview(){const p=await fetch(`/api/preview?seed=${seed}`).th
 function watch(s){$("match").value=s;$("match").onchange();document.querySelector('.views button[data-v="live"]').click();$("teamdrawer").classList.remove("on");}
 // ------------------------------------------------------------------ league
 let LG=null,lgDay=30,selTeam=null;
-async function loadLeague(){LG=await fetch(`/api/league?day=${lgDay}`).then(r=>r.json());$("lgname").textContent=LG.name;$("lgday").max=LG.days;$("lgday").value=lgDay;$("lgdayl").textContent=`after matchday ${lgDay}`;
+async function loadLeague(){LG=await J(`/api/league?day=${lgDay}`);$("lgname").textContent=LG.name;$("lgday").max=LG.days;$("lgday").value=lgDay;$("lgdayl").textContent=`after matchday ${lgDay}`;
  const mv=m=>m>0?`<span style="color:#3fb950">▲${m}</span>`:m<0?`<span style="color:#f07489">▼${-m}</span>`:'<span class="muted">–</span>';
  $("ltable").innerHTML="<tr><th>#</th><th>Club</th><th></th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th><th>Form</th></tr>"+LG.table.map(r=>
   `<tr class="trow" data-t="${r.id}" style="cursor:pointer${r.position<=1?";box-shadow:inset 3px 0 var(--acc)":r.position>=15?";box-shadow:inset 3px 0 var(--bad)":""}"><td>${r.position}</td><td><img src="${r.crest}" alt="">${esc(r.name)}</td><td>${mv(r.move)}</td><td>${r.played}</td><td>${r.won}</td><td>${r.drawn}</td><td>${r.lost}</td><td>${r.gf}</td><td>${r.ga}</td><td>${r.gd>0?"+":""}${r.gd}</td><td><b>${r.points}</b></td><td class="form">${r.form.map(f=>`<b class="${f}">${f}</b>`).join("")}</td></tr>`).join("");
@@ -292,11 +321,11 @@ async function loadLeague(){LG=await fetch(`/api/league?day=${lgDay}`).then(r=>r
 function fx(){const d=+$("md").value,sp=$("spoil").checked;$("fixtures").innerHTML=LG.fixtures.filter(f=>f.matchday===d).map(f=>`<div class="fx"><img src="/api/crest/${f.home_id}.svg" alt=""><span style="flex:1">${esc(f.home)}</span><span class="sc">${sp&&f.score&&d<=lgDay?`${f.score[f.home_id]} – ${f.score[f.away_id]}`:"v"}</span><span style="flex:1;text-align:right">${esc(f.away)}</span><img src="/api/crest/${f.away_id}.svg" alt=""><button class="btn ghost" data-s="${f.seed}" style="padding:2px 8px">Watch</button></div>`).join("");
  $("fixtures").querySelectorAll("button").forEach(b=>b.onclick=()=>watch(b.dataset.s));}
 function drawPos(){if(!LG)return;const c=$("poschart"),g=c.getContext("2d"),W=c.width,Hh=c.height,n=lgDay;g.clearRect(0,0,W,Hh);g.font="12px system-ui";g.fillStyle="#8d9ab0";
- const X=d=>36+(W-50)*(d-1)/Math.max(1,LG.days-1),Y=p=>10+(Hh-30)*(p-1)/15;[1,4,8,12,16].forEach(p=>g.fillText(p,6,Y(p)+4));[1,10,20,30].forEach(d=>g.fillText("MD"+d,X(d)-12,Hh-4));
+ const X=d=>36+(W-50)*(d-1)/Math.max(1,LG.days-1),Y=p=>10+(Hh-30)*(p-1)/15;[1,4,8,12,16].forEach(p=>g.fillText(p,6,Y(p)+4));[1,10,20,LG.days].forEach(d=>{g.textAlign=d===LG.days?"right":d===1?"left":"center";g.fillText("MD"+d,X(d)+(d===LG.days?4:0),Hh-4);});g.textAlign="start";
  const order=Object.keys(LG.positions).sort(a=>a===selTeam?1:-1);order.forEach(t=>{const c2=LG.clubs.find(x=>x.id===t),on=t===selTeam;g.strokeStyle=on?c2.color:"#ffffff22";g.lineWidth=on?3:1;g.beginPath();
   LG.positions[t].forEach((p,i)=>{i?g.lineTo(X(i+1),Y(p)):g.moveTo(X(i+1),Y(p));});g.stroke();});
  $("poscap").textContent=selTeam?`${LG.clubs.find(x=>x.id===selTeam).name}: position after each matchday`:"Hover a club in the table to trace its season.";}
-async function teamPage(id){const t=await fetch(`/api/team/${id}?day=${lgDay}`).then(r=>r.json()),c=t.club,s=t.season,st=t.standing,pm=s.per_match,to=s.totals;selTeam=id;drawPos();
+async function teamPage(id){const t=await J(`/api/team/${id}?day=${lgDay}`),c=t.club,s=t.season,st=t.standing,pm=s.per_match,to=s.totals;selTeam=id;drawPos();
  const name=x=>LG.clubs.find(k=>k.id===x)?.short||x;
  $("teambody").innerHTML=`<div style="display:flex;gap:12px;align-items:center"><img src="${c.crest}" style="width:48px;height:58px" alt=""><div><h2 style="font-size:1.3em">${esc(c.name)}</h2><div class="muted">${esc(c.stadium)} · ${st.position}${["th","st","nd","rd"][st.position%10>3||[11,12,13].includes(st.position)?0:st.position%10]} after matchday ${lgDay} · ${st.points} pts · ${st.won}-${st.drawn}-${st.lost}</div></div></div>
  <div class="kpis" style="grid-template-columns:repeat(4,1fr)">${[[to.goals_for,"goals for"],[to.goals_against,"goals against"],[to.xg_for,"xG for"],[to.xg_against,"xG against"],[pm.shots,"shots / match"],[pm.possession_pass_share_pct+"%","possession (pass share)"],[pm.pass_completion_pct+"%","pass completion"],[to.clean_sheets,"clean sheets"]].map(([b,l])=>`<div class="kpi"><b>${b}</b><span>${l}</span></div>`).join("")}</div>
@@ -305,4 +334,4 @@ async function teamPage(id){const t=await fetch(`/api/team/${id}?day=${lgDay}`).
   return `<div class="fx"><span class="muted" style="min-width:42px">MD ${m.matchday}</span><span>${home?"vs":"at"}</span><img src="/api/crest/${o}.svg" alt=""><span style="flex:1">${esc(name(o))}</span>${res?`<span class="form"><b class="${res}">${res}</b></span><span class="sc">${m.score[m.home]} – ${m.score[m.away]}</span>`:'<span class="muted sc">upcoming</span>'}<button class="btn ghost" data-s="${m.seed}" style="padding:2px 8px">Watch</button></div>`;}).join("")}`;
  $("teambody").querySelectorAll("button[data-s]").forEach(b=>b.onclick=()=>watch(b.dataset.s));$("teamdrawer").classList.add("on");}
 $("lgday").oninput=()=>{lgDay=+$("lgday").value;$("lgdayl").textContent=`after matchday ${lgDay}`;};$("lgday").onchange=()=>{$("md").value=lgDay;loadLeague();};
-pipe();kpis();sugg();requestAnimationFrame(frame);
+pipe();kpis();sugg();requestAnimationFrame(frame);$("chaosbtn").onclick=chaos;

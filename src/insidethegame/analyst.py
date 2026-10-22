@@ -87,7 +87,7 @@ def fallback_answer(question: str, facts: dict) -> str:
         return f"{lead} added more threat with the ball: xT {T[lead]['xt']} against {T[oth]['xt']}."
     if re.search(r"best|top|mvp|star|mejor|meilleur|player|jugador|joueur", q) and facts["top_players"]:
         p = facts["top_players"][0]
-        return (f"{p['name']} ({p['team']}) tops the impact table: goals {p["goals"]}, xG {p['xg']} "
+        return (f"{p['name']} ({p['team']}) tops the impact table: goals {p['goals']}, xG {p['xg']} "
                 f"and xT {p['xt']}.")
     if re.search(r"who scor|goal|gol|but|scorer", q):
         if not goals:

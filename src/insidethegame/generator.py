@@ -20,7 +20,7 @@ from dataclasses import asdict
 from typing import AsyncIterator, Iterator
 
 from . import metrics
-from .teams import Team, Player, default_teams, teams_for_seed, STADIUM
+from .teams import Team, Player, teams_for_seed, STADIUM
 
 HALF_S = 45 * 60
 
@@ -75,6 +75,7 @@ class MatchGenerator:
             "away": {"id": self.away.id, "name": self.away.name, "short": self.away.short, "color": self.away.color,
                      "players": [asdict(p) for p in self.away.players + self.away.bench]},
             "venue": STADIUM.get(self.home.id, "Saltmarsh Park") + " (fictional)", "seed": self.seed, "synthetic": True})
+        t = 0.0
         for period, (start, end) in enumerate([(0, HALF_S), (HALF_S, 2 * HALF_S)], start=1):
             if period == 2:
                 self._period, self._offset = 2, max(0.0, t - HALF_S + 900)  # 15-min half-time interval

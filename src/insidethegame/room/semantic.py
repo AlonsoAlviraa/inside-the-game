@@ -117,11 +117,6 @@ def check(text: str, facts: dict, snap: dict | None = None, meta: dict | None = 
     for name in roster or []:
         if name in text and name not in allowed and allowed:
             issues.append(f"attribution: {name} is not part of this moment")
-    if re.search(r"\b(pathetic|useless|rubbish|disgrace|embarrass\w*|clowns?|cheat\w*|robbed|patétic\w*|inútil\w*|"
-                 r"vergüenza|ridícul\w*|lamentable|nuls?|honte\w*|minables?)\b", low):
-        out.append("fan: disrespectful or one-sided tone")
-    if re.search(r"\b(we|us|our|nosotros|nuestro|nuestra|nous|notre)\b", low):
-        out.append("fan: partisan first person")
     if facts.get("moment") == "goal" and facts.get("player") and facts["player"] not in text:
         if re.search(r"(scor|goal|gol|marca|but\b)", low) and any(n in text for n in roster or []):
             issues.append("attribution: goal credited to the wrong player")

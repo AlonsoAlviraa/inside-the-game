@@ -14,7 +14,7 @@ from .room import localise
 from .room import CARD_SCHEMA, CommentaryRoom, ViewerMemory, ViewerProfile
 
 FLUSH = {"goal", "period_end", "match_end"}
-from .generator import MatchGenerator, stream
+from .generator import stream
 from . import analyst, insights
 from . import league, season, replay
 from .teams import LEAGUE_DAYS, LEAGUE_NAME, _POOL, club_list, crest_svg, fixture_list
@@ -23,10 +23,75 @@ WEB_DIR = Path(os.getenv("ITG_WEB_DIR", Path(__file__).resolve().parents[2] / "w
 app = FastAPI(title="Inside the Game - Commentary Room", version="0.1.0")
 
 
+ROOMS: dict[str, CommentaryRoom] = {}   # live rooms by client stream id (for fault injection)
+AGENTS = ("ingest", "interpret", "salience", "explain", "render", "personalise")
+_WARM = {"done": False}
+
+
+@app.on_event("startup")
+async def _warm() -> None:
+    """Pre-compute the showcase matches and replay caches so the first visitor never waits on a cold start."""
+    async def go():
+        try:
+            for s in replay.SHOWCASE:
+                await asyncio.to_thread(insights.events, s)
+            await asyncio.to_thread(replay.available)
+            _WARM["done"] = True
+        except Exception as e:  # never block startup
+            _WARM["error"] = repr(e)
+    asyncio.create_task(go())
+
+
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "llm_provider": os.getenv("ITG_LLM_PROVIDER", "mock"),
-            "orchestrator": os.getenv("ITG_ORCHESTRATOR", "maf")}
+    return {"status": "ok", "warm": _WARM["done"], "llm_provider": os.getenv("ITG_LLM_PROVIDER", "mock"),
+            "orchestrator": os.getenv("ITG_ORCHESTRATOR", "maf"), "replay_matches": len(replay.available()),
+            "live_rooms": len(ROOMS)}
+
+
+class ChaosReq(BaseModel):
+    agent: str = Field("explain", description="agent to break: " + ", ".join(AGENTS))
+    severity: str = Field("transient", pattern="^(transient|hard)$")
+    seed: int = 7
+    minute: int = Field(30, ge=1, le=95)
+    mode: str = "fan"
+    lang: str = "en"
+    sid: str | None = None
+
+
+@app.post("/api/chaos")
+async def chaos(req: ChaosReq) -> dict:
+    """Fault injection. With the `sid` of a live stream, arms a failure in that room's next batch (the trace
+    arrives with the next cards). Otherwise runs a sandbox room in rules mode (no model calls, zero cost) up to
+    `minute`, breaks `agent` on the last batch and returns that batch's trace so the recovery is visible."""
+    if req.agent not in AGENTS:
+        return {"error": f"unknown agent {req.agent}"}
+    room = ROOMS.get(req.sid or "")
+    if room is not None:
+        room.inject_fault(req.agent, req.severity)
+        return {"armed": True, "live": True, "agent": req.agent, "severity": req.severity}
+    sandbox = CommentaryRoom(req.seed, online=False)
+    profile = ViewerProfile(mode=req.mode, language=req.lang)
+    evs = [e for e in insights.events(req.seed) if e.get("minute", 0) <= req.minute]
+    hot = [i for i, e in enumerate(evs) if e["type"] in ("goal", "shot", "card")]
+    if hot:  # end the sandbox on the latest notable moment so the broken batch has something to explain
+        evs = evs[:hot[-1] + 1]
+    batches, cur = [], []
+    for ev in evs:
+        cur.append(ev)
+        if ev["t"] - cur[0]["t"] >= 300 or ev["type"] in FLUSH:
+            batches.append(cur)
+            cur = []
+    if cur:
+        batches.append(cur)
+    b = None
+    for i, batch in enumerate(batches):
+        if i == len(batches) - 1:
+            sandbox.inject_fault(req.agent, req.severity)
+        b = await sandbox.process_batch(batch, profile)
+    return {"armed": True, "live": False, "agent": req.agent, "severity": req.severity, "minute": sandbox.state.minute,
+            "orchestrator": sandbox.orchestrator, "trace": b.trace if b else [],
+            "cards": localise.ensure(b.cards, req.lang, req.mode) if b else [], "errors": sandbox.errors[-3:]}
 
 
 @app.get("/api/match")
@@ -39,7 +104,7 @@ async def match(seed: int = 7, meta_only: bool = False) -> dict:
 @app.get("/api/stream")
 async def sse(seed: int = 7, speed: float = Query(60.0, ge=0, le=5000), mode: str = "fan",
               lang: str = "en", club: str | None = None, player: str | None = None, viewer: str = "anonymous",
-              batch_s: float = Query(float(os.getenv("ITG_BATCH_S", "300")), ge=30, le=900), replay_mode: bool = Query(False, alias="replay")):
+              batch_s: float = Query(float(os.getenv("ITG_BATCH_S", "300")), ge=30, le=900), replay_mode: bool = Query(False, alias="replay"), sid: str | None = None):
     """SSE: `tick` per raw event (pitch/score), `cards` per agent batch (overlay cards + agent trace + usage).
     Events are batched per `batch_s` match-seconds (flushed early on goals and period ends) so the room makes
     a handful of LLM calls per batch and stays under the deployment's tokens-per-minute quota."""
@@ -52,6 +117,8 @@ async def sse(seed: int = 7, speed: float = Query(60.0, ge=0, le=5000), mode: st
                                                  player=player or None, viewer_id=viewer))
     memory.remember_profile(profile)
     room = CommentaryRoom(seed, memory=memory)
+    if sid:
+        ROOMS[sid[:40]] = room
 
     async def gen():
         # Raw events keep flowing at match speed; batches are handed to a single background worker so LLM
@@ -102,6 +169,8 @@ async def sse(seed: int = 7, speed: float = Query(60.0, ge=0, le=5000), mode: st
                 yield f"event: cards\ndata: {json.dumps(out, default=str)}\n\n"
         finally:
             task.cancel()
+            if sid:
+                ROOMS.pop(sid[:40], None)
             memory.save()
             await room.close()
         yield "event: end\ndata: {}\n\n"

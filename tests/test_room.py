@@ -1,5 +1,4 @@
 import asyncio
-import pytest
 from insidethegame.generator import MatchGenerator
 from insidethegame.room import CommentaryRoom, ViewerMemory, ViewerProfile, validate_card
 from insidethegame.room import factcheck

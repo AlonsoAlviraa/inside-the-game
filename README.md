@@ -1,5 +1,12 @@
 # Inside the Game: Multi-Agent Commentary Room
 
+[![CI](https://github.com/AlonsoAlviraa/inside-the-game/actions/workflows/ci.yml/badge.svg)](https://github.com/AlonsoAlviraa/inside-the-game/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+![Microsoft Agent Framework](https://img.shields.io/badge/Microsoft%20Agent%20Framework-workflow-5c2d91)
+![Azure](https://img.shields.io/badge/Azure-Container%20Apps%20%C2%B7%20OpenAI%20%C2%B7%20Foundry-0078d4)
+![IaC](https://img.shields.io/badge/IaC-Bicep%20%2B%20azd-0078d4)
+![Data](https://img.shields.io/badge/data-100%25%20synthetic-2dd4a7)
+
 An AI commentary room that turns a **synthetic** live football event stream into explainable, personalised
 overlay cards. **Five agents, one per challenge stage**, run as a **Microsoft Agent Framework workflow** on
 **Azure OpenAI gpt-4.1-mini** (Azure AI Foundry). Every AI line is fact-checked and safety-checked before a viewer sees it.
@@ -18,7 +25,11 @@ Built for the *Inside the Game* developer hackathon. All clubs, players, crests,
    the AI room and passed the checks. Ask the analyst desk a question at any time; open the full-time report at the end.
 4. Switch the toggle to **Live AI** to watch the five agents run right now on Azure OpenAI (agent trace, tokens and
    cost update live).
-5. Open **League** for the 16-club season (table, matchday slider, leaders, team pages) and **pre-match** comparisons.
+5. Open the **AI room** tab: the **Agent handoffs** strip shows what each agent passed to the next. Press
+   **💥 Break it** to crash one agent: the orchestrator retries it (transient fault) or degrades it to its rules path
+   (hard fault), the batch still reaches the viewer, and the recovery appears in the trace (OpenTelemetry spans).
+6. Open **Stats** for the ball and pass intelligence: pass difficulty, ball and shot speed, hardest pass, fastest shot.
+7. Open **League** for the 16-club season (table, matchday slider, leaders, team pages) and **pre-match** comparisons.
 
 ## Microsoft technologies used
 | Technology | Where |
@@ -134,6 +145,30 @@ server over stdio, else in-process tools. The legacy four-agent pipeline is kept
 | Control (per team, 5-min window) | `0.5·possession share + 0.3·pass completion + 0.2·final-third entry share` |
 | Chaos (0-1) | `min(1, (turnovers + 0.5·pressures + fouls) / (window_min · 6))` |
 | Momentum | `control_home − control_away` |
+
+### Ball & pass intelligence (Stats tab, `/api/report` → `ball`)
+Per team: average pass difficulty, hard passes (difficulty ≥ 0.6) and their completion rate, average pass speed,
+average shot speed and ball distance travelled by passes; plus the fastest shot, fastest pass and hardest completed
+pass with player and minute. All computed from the synthetic x/y coordinates and timestamps above. The live
+"now" line also shows each shot's speed and distance. Player running distance/speed is not shown because the
+synthetic feed has event coordinates, not continuous player tracking.
+
+## Fault tolerance & chaos test (multi-agent orchestration)
+Every agent step runs under a recovery policy in `room/workflow.py`: **attempt → retry → rules fallback**
+(the agent's LLM brain is switched off for that call, so it uses its deterministic, fact-checked template path).
+A failed attempt's partial output is rolled back, so a retry never duplicates cards. Each step records
+`fault`, `attempts`, `recovery` and its output counts in its OpenTelemetry span and the UI trace.
+`POST /api/chaos {"agent": "explain", "severity": "transient" | "hard"}` arms a one-shot failure: in **Live AI**
+mode it hits the viewer's own running room on its next batch; in **Replay** mode it runs a sandbox room in rules
+mode up to the current minute (no model calls, zero cost) and returns that batch's trace.
+
+## CI and infrastructure as code
+- `.github/workflows/ci.yml`: ruff lint + pytest on Python 3.11 and 3.12 (mock provider, no secrets), Docker build
+  with a `/health` smoke test, and Bicep validation.
+- `infra/main.bicep` (+ `main.parameters.json`, `azure.yaml` for `azd`): Log Analytics, ACR, Azure AI Services
+  (Foundry) resource and project, the gpt-4.1-mini GlobalStandard deployment, Container Apps environment and app
+  with health probes and AcrPull by managed identity. It describes the existing deployment; it was not used to
+  redeploy it.
 
 ## Agents (`src/insidethegame/agents/`)
 Each agent has a `name`, `instructions` (system prompt) and `handle(event, state)`, matching a Microsoft
